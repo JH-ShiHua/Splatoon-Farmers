@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#071d19" />
+    <meta
+      name="description"
+      content="Splatoon Raiders 单机素材刷取用 ESP32-S3 有线手柄控制台。"
+    />
+    <title>Splatoon Farmers · Material Raid Console</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="ambient-ink ambient-ink-teal" aria-hidden="true"></div>
+    <div class="ambient-ink ambient-ink-yellow" aria-hidden="true"></div>
+
+    <main class="page-shell">
+      <header class="topbar">
+        <a class="brand" href="./" aria-label="Splatoon Farmers 首页">
+          <span class="brand-mark" aria-hidden="true">
+            <span>SF</span>
+          </span>
+          <span class="brand-copy">
+            <strong>Splatoon Farmers</strong>
+            <small>Material Raid Console</small>
+          </span>
+        </a>
+        <div class="hardware-label">
+          <span class="live-pip" aria-hidden="true"></span>
+          ESP32-S3 · WIRED HID
+        </div>
+      </header>
+
+      <section class="hero" aria-labelledby="page-title">
+        <div class="intro">
+          <div class="hero-sticker">SOLO MATERIAL RUN</div>
+          <p class="eyebrow">斯普拉遁：涂击队 · 海岛远征终端</p>
+          <h1 id="page-title">
+            开刷。
+            <span>素材满仓。</span>
+          </h1>
+          <p class="lede">
+            一键派出板载脚本，ESP32-S3 会在手柄端独立完成整轮操作。
+            网页掉线也不会截断任务，想手动接管时，按键和键盘都已就位。
+          </p>
+          <div class="hero-tags" aria-label="功能摘要">
+            <span>BOARD-RESIDENT</span>
+            <span>48 STEPS</span>
+            <span>∞ LOOP</span>
+          </div>
+        </div>
+
+        <section class="control-card" aria-label="素材远征控制">
+          <div class="card-tape" aria-hidden="true">RAID READY</div>
+          <div class="card-head">
+            <div>
+              <p class="card-kicker">CURRENT ROUTINE / 当前任务</p>
+              <h2>素材远征 · 自动循环</h2>
+            </div>
+            <div
+              class="status-badge"
+              data-testid="status-badge"
+              data-state="disconnected"
+            >
+              <span class="status-dot" aria-hidden="true"></span>
+              <span data-testid="status-text">未连接</span>
+            </div>
+          </div>
+
+          <div class="macro-facts" aria-label="脚本信息">
+            <div>
+              <span>STEPS / 步骤</span>
+              <strong>48</strong>
+            </div>
+            <div>
+              <span>CYCLE / 单轮</span>
+              <strong data-testid="duration-text">01:03.595</strong>
+            </div>
+            <div>
+              <span>LOADOUT / 存储</span>
+              <strong>板载 Flash</strong>
+            </div>
+          </div>
+
+          <div class="progress-block">
+            <div class="progress-label">
+              <span>MISSION PROGRESS</span>
+              <span data-testid="step-text">0 / 48</span>
+            </div>
+            <progress
+              data-testid="macro-progress"
+              max="48"
+              value="0"
+              aria-label="脚本执行进度"
+            ></progress>
+          </div>
+
+          <p class="device-detail" data-testid="detail-text">
+            先用 USB-UART 连接电脑
+          </p>
+          <p class="error-message" data-testid="error-text" hidden></p>
+
+          <div class="controls">
+            <button
+              class="button button-secondary"
+              type="button"
+              data-testid="connect-button"
+            >
+              连接手柄
+            </button>
+            <button
+              class="button button-primary"
+              type="button"
+              data-testid="start-button"
+              disabled
+            >
+              开始刷取
+            </button>
+            <button
+              class="button button-stop"
+              type="button"
+              data-testid="stop-button"
+              disabled
+            >
+              停止
+            </button>
+          </div>
+
+          <p class="browser-note" data-testid="browser-note">
+            桌面版 Chrome / Edge · 浏览器只负责发令，不参与脚本计时
+          </p>
+        </section>
+      </section>
+
+      <section
+        class="manual-panel"
+        aria-labelledby="manual-title"
+        data-testid="manual-panel"
+      >
+        <div class="panel-stamp" aria-hidden="true">MANUAL DECK</div>
+        <div class="manual-head">
+          <div>
+            <p class="eyebrow">临时接管 / DIRECT INPUT</p>
+            <h2 id="manual-title">需要补一刀？自己来。</h2>
+            <p>
+              鼠标、触屏和键盘都支持按住与多键组合。任意手动输入会先停止板载脚本；
+              松开按键、窗口失焦或切换标签页时自动释放。
+            </p>
+          </div>
+          <span
+            class="manual-status"
+            data-testid="manual-status"
+            data-state="disconnected"
+          >
+            连接后启用
+          </span>
+        </div>
+
+        <div class="shoulder-strip" role="group" aria-label="肩键">
+          <div class="shoulder-pair">
+            <button
+              class="manual-button shoulder-button"
+              type="button"
+              data-control="ZL"
+              data-testid="manual-zl"
+              aria-label="ZL，键盘 1"
+              aria-pressed="false"
+              disabled
+            >
+              <span>ZL</span><kbd>1</kbd>
+            </button>
+            <button
+              class="manual-button shoulder-button"
+              type="button"
+              data-control="L"
+              data-testid="manual-l"
+              aria-label="L，键盘 Q"
+              aria-pressed="false"
+              disabled
+            >
+              <span>L</span><kbd>Q</kbd>
+            </button>
+          </div>
+          <div class="shoulder-pair">
+            <button
+              class="manual-button shoulder-button"
+              type="button"
+              data-control="R"
+              data-testid="manual-r"
+              aria-label="R，键盘 E"
+              aria-pressed="false"
+              disabled
+            >
+              <span>R</span><kbd>E</kbd>
+            </button>
+            <button
+              class="manual-button shoulder-button"
+              type="button"
+              data-control="ZR"
+              data-testid="manual-zr"
+              aria-label="ZR，键盘 3"
+              aria-pressed="false"
+              disabled
+            >
+              <span>ZR</span><kbd>3</kbd>
+            </button>
+          </div>
+        </div>
+
+        <div class="manual-deck">
+          <div class="input-cluster" role="group" aria-label="方向键">
+            <p class="cluster-label">MOVE / D-PAD</p>
+            <div class="control-diamond dpad-diamond">
+              <button
+                class="manual-button round-button position-up"
+                type="button"
+                data-control="DPAD_UP"
+                data-testid="manual-dpad-up"
+                aria-label="方向键上，键盘方向键上"
+                aria-pressed="false"
+                disabled
+              >
+                <span>↑</span><kbd>↑</kbd>
+              </button>
+              <button
+                class="manual-button round-button position-left"
+                type="button"
+                data-control="DPAD_LEFT"
+                data-testid="manual-dpad-left"
+                aria-label="方向键左，键盘方向键左"
+                aria-pressed="false"
+                disabled
+              >
+                <span>←</span><kbd>←</kbd>
+              </button>
+              <span class="diamond-center" aria-hidden="true"></span>
+              <button
+                class="manual-button round-button position-right"
+                type="button"
+                data-control="DPAD_RIGHT"
+                data-testid="manual-dpad-right"
+                aria-label="方向键右，键盘方向键右"
+                aria-pressed="false"
+                disabled
+              >
+                <span>→</span><kbd>→</kbd>
+              </button>
+              <button
+                class="manual-button round-button position-down"
+                type="button"
+                data-control="DPAD_DOWN"
+                data-testid="manual-dpad-down"
+                aria-label="方向键下，键盘方向键下"
+                aria-pressed="false"
+                disabled
+              >
+                <span>↓</span><kbd>↓</kbd>
+              </button>
+            </div>
+          </div>
+
+          <div
+            class="input-cluster utility-cluster"
+            role="group"
+            aria-label="系统按键"
+          >
+            <p class="cluster-label">SYSTEM / UTILITY</p>
+            <div class="utility-grid">
+              <button
+                class="manual-button utility-button"
+                type="button"
+                data-control="MINUS"
+                data-testid="manual-minus"
+                aria-label="减号，键盘减号"
+                aria-pressed="false"
+                disabled
+              >
+                <span>−</span><kbd>−</kbd>
+              </button>
+              <button
+                class="manual-button utility-button"
+                type="button"
+                data-control="PLUS"
+                data-testid="manual-plus"
+                aria-label="加号，键盘等号"
+                aria-pressed="false"
+                disabled
+              >
+                <span>+</span><kbd>=</kbd>
+              </button>
+              <button
+                class="manual-button utility-button"
+                type="button"
+                data-control="L_STICK_PRESS"
+                data-testid="manual-l3"
+                aria-label="左摇杆按下 L3，键盘 Z"
+                aria-pressed="false"
+                disabled
+              >
+                <span>L3</span><kbd>Z</kbd>
+              </button>
+              <button
+                class="manual-button utility-button"
+                type="button"
+                data-control="R_STICK_PRESS"
+                data-testid="manual-r3"
+                aria-label="右摇杆按下 R3，键盘 X"
+                aria-pressed="false"
+                disabled
+              >
+                <span>R3</span><kbd>X</kbd>
+              </button>
+              <button
+                class="manual-button utility-button"
+                type="button"
+                data-control="CAPTURE"
+                data-testid="manual-capture"
+                aria-label="截图，键盘 C"
+                aria-pressed="false"
+                disabled
+              >
+                <span>Capture</span><kbd>C</kbd>
+              </button>
+              <button
+                class="manual-button utility-button"
+                type="button"
+                data-control="HOME"
+                data-testid="manual-home"
+                aria-label="Home，键盘 H"
+                aria-pressed="false"
+                disabled
+              >
+                <span>Home</span><kbd>H</kbd>
+              </button>
+            </div>
+          </div>
+
+          <div class="input-cluster" role="group" aria-label="ABXY 按键">
+            <p class="cluster-label">ACTION / IJKL</p>
+            <div class="control-diamond face-diamond">
+              <button
+                class="manual-button round-button face-button position-up"
+                type="button"
+                data-control="X"
+                data-testid="manual-x"
+                data-face="x"
+                aria-label="X，键盘 I"
+                aria-pressed="false"
+                disabled
+              >
+                <span>X</span><kbd>I</kbd>
+              </button>
+              <button
+                class="manual-button round-button face-button position-left"
+                type="button"
+                data-control="Y"
+                data-testid="manual-y"
+                data-face="y"
+                aria-label="Y，键盘 J"
+                aria-pressed="false"
+                disabled
+              >
+                <span>Y</span><kbd>J</kbd>
+              </button>
+              <span
+                class="diamond-center face-center"
+                aria-hidden="true"
+              ></span>
+              <button
+                class="manual-button round-button face-button position-right"
+                type="button"
+                data-control="A"
+                data-testid="manual-a"
+                data-face="a"
+                aria-label="A，键盘 L"
+                aria-pressed="false"
+                disabled
+              >
+                <span>A</span><kbd>L</kbd>
+              </button>
+              <button
+                class="manual-button round-button face-button position-down"
+                type="button"
+                data-control="B"
+                data-testid="manual-b"
+                data-face="b"
+                aria-label="B，键盘 K"
+                aria-pressed="false"
+                disabled
+              >
+                <span>B</span><kbd>K</kbd>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="wiring" aria-labelledby="wiring-title">
+        <div class="wiring-copy">
+          <p class="eyebrow">GEAR CHECK / 双链路</p>
+          <h2 id="wiring-title">两根线，各干一件事。</h2>
+          <p>原生 USB 负责扮演手柄，USB-UART 只负责接受网页指令。</p>
+        </div>
+        <ol class="wiring-list">
+          <li>
+            <span>01</span>
+            <div>
+              <strong>原生 USB → Switch 底座</strong>
+              <p>GPIO19 / GPIO20 输出有线手柄 HID。</p>
+            </div>
+          </li>
+          <li>
+            <span>02</span>
+            <div>
+              <strong>USB-UART → 电脑</strong>
+              <p>网页发送 START、STOP、状态查询和手动按键。</p>
+            </div>
+          </li>
+        </ol>
+      </section>
+
+      <footer>
+        <span>SPLATOON FARMERS · UNOFFICIAL FAN PROJECT</span>
+        <span>任务在板上跑，网页只发令。</span>
+      </footer>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
