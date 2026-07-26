@@ -5,6 +5,9 @@ farming in [Splatoon Raiders](https://www.nintendo.com/us/store/products/splatoo
 It is intentionally small: connect the board, open the page, and start the
 board-resident routine.
 
+![](./images/banner.png)
+Check this video for tutorial: [bilibili](https://www.bilibili.com/video/BV12P3J6hE4h/)
+
 ## What it does
 
 - Emulates a wired Nintendo Switch controller over the ESP32-S3 native USB port.
