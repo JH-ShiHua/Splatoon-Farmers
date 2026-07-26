@@ -1,12 +1,21 @@
 # Splatoon Farmers
 
+> [!WARNING]
+> This is not a plug-and-play project. Before running the automated routine,
+> you must first beat the game, manually farm enough materials and crystals, and
+> use them to complete the required initial gear setup. The script assumes that setup
+> has already been finished and will not perform it for you.
+
 An unofficial ESP32-S3 wired controller and browser console for material
 farming in [Splatoon Raiders](https://www.nintendo.com/us/store/products/splatoon-raiders-switch-2/).
 It is intentionally small: connect the board, open the page, and start the
 board-resident routine.
 
 ![](./images/banner.png)
-Check this video for tutorial: [bilibili](https://www.bilibili.com/video/BV12P3J6hE4h/)
+
+Check this video for tutorial: [Bilibili](https://www.bilibili.com/video/BV12P3J6hE4h/)
+
+Required gears described in this video: [Bilibili](https://www.bilibili.com/video/BV1Hp3G6KEfs/)
 
 ## What it does
 
@@ -151,3 +160,7 @@ This is an unofficial fan project and is not affiliated with, endorsed by, or
 sponsored by Nintendo. Splatoon, Splatoon Raiders, Nintendo Switch, and related
 names and marks belong to their respective owners. Use automation responsibly;
 the project is intended for offline, single-player material farming.
+
+## Credits
+
+Thanks to [我的茕茕孑立](https://space.bilibili.com/35615481) for the original game controller macro.
