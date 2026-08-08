@@ -25,6 +25,10 @@ Required gears described in this video: [Bilibili](https://www.bilibili.com/vide
 - Starts, stops, and reports progress through a Web Serial page.
 - Provides every digital controller button, D-pad direction, and two analog
   virtual sticks for mouse, touch, and keyboard-assisted input.
+- Records manual buttons and analog-stick movement in the browser, inserts the
+  recording after the stopped step, and preserves the unexecuted macro suffix.
+- Stores a persistent custom macro in ESP32 NVS and switches between the
+  embedded original macro and the saved custom macro from the WebUI.
 
 The browser sends only high-level `START`, `STOP`, and status commands during
 automatic operation. Timing is owned by the microcontroller, so normal serial
@@ -91,8 +95,33 @@ secure context, so opening `web/index.html` directly is not supported.
 3. Select **开始刷取**. The routine restarts at step 1 and loops until stopped.
 4. Select **停止** to immediately send a neutral controller report.
 
-Disconnecting USB-UART does not stop an already running routine. Reconnect and
-stop it, reset the board, or remove power when you need to end it.
+The step counter, progress bar, large **STEPS** value, cycle duration, and active
+macro name are updated from the ESP32 response rather than from a fixed browser
+constant.
+
+After **开始刷取** has been accepted, execution belongs to the ESP32. Switching
+to another tab or minimizing the browser does not stop the running routine. The
+page sends a neutral report on focus loss only when a browser-held button or
+virtual stick is actually active. Closing the serial port should also leave the
+board-resident routine running, but some onboard USB-UART bridges toggle reset
+signals when a port opens or closes; use a TX/RX/GND-only external adapter when
+that hardware behavior must be avoided. Reconnect and select **停止**, reset the
+board, or remove power when you need to end a routine.
+
+### Board macro list
+
+The **BOARD MACROS / 板载脚本** selector lists routines currently available on
+the ESP32:
+
+- **原始素材宏** is the immutable 48-step routine compiled into firmware.
+- **自定义宏** is the latest edited routine stored in NVS. It appears after a
+  recording has been successfully committed.
+
+Choose a routine and select **刷写并切换**. The ESP32 stops the current run,
+activates the selected routine, and returns its real step count and duration.
+Switching to the original routine does not delete the saved custom routine, so
+you can switch back later. **恢复原始宏** is different: it deletes the saved
+custom routine and restores the embedded original.
 
 ### Manual controls
 
@@ -131,17 +160,35 @@ The control link is `115200 baud`, ASCII, one command per line.
 | `MACRO_COMMIT` | Insert, activate, and persist the uploaded steps in NVS |
 | `MACRO_CANCEL` | Discard a pending upload |
 | `MACRO_RESET` | Restore the embedded 48-step routine |
+| `MACRO_LIST` | List the original and saved custom routines, their step counts, and the active routine |
+| `MACRO_SELECT ORIGINAL` | Activate the embedded original without deleting the saved custom routine |
+| `MACRO_SELECT CUSTOM` | Load and activate the saved NVS custom routine |
 
 The raw report command keeps the firmware useful for future computer-loaded
 routines without changing the board protocol.
 
 ### Record and insert a macro from the WebUI
 
-1. Connect the USB-UART port and let the page read the current step.
-2. Select **开始录制**. The page remembers that step as the insertion point and stops the running routine.
-3. Use the manual controller buttons or keyboard. Presses, releases, combinations, and neutral delays are recorded with millisecond timing.
-4. Select **完成并写入**. The recording is inserted after the captured step and the original suffix remains in place.
-5. Select **开始刷取** to run the updated board-resident macro from step 1.
+1. Start the selected routine and wait until the progress bar reaches the place
+   where the new actions should be inserted.
+2. Select **停止**. The WebUI freezes the last running step instead of resetting
+   the insertion point to zero.
+3. Select **开始录制**. The frozen step is remembered as the insertion anchor.
+4. Use the manual buttons, keyboard, D-pad, or either virtual stick. Presses,
+   releases, combinations, analog positions, and neutral delays are recorded
+   with millisecond timing.
+5. Select **完成并写入**. Commands are sent one at a time; the next step is not
+   sent until the ESP32 acknowledges the previous one. The page reports success
+   only after `MACRO_COMMIT` has been confirmed and saved.
+6. Confirm that **自定义宏已保存** appears and that every step-count display has
+   increased. Select **开始刷取** to run the updated routine from step 1.
+
+For example, if the original routine is stopped at step 17 and the recording
+contains four steps, the saved order is:
+
+```text
+original 1-17 -> recorded 4 steps -> original 18-48
+```
 
 The resulting macro is stored in ESP32 NVS and survives reset or power loss. Use **恢复原始宏** to delete it and return to the embedded routine. A macro may contain up to 160 total steps, with up to 96 steps added by one recording.
 
@@ -159,6 +206,9 @@ The test suite covers:
 - Status parsing and the simulated serial transport
 - All 14 button bits, cardinal/diagonal D-pad input, keyboard mapping, and
   multi-source press/release behavior
+- Virtual-stick coordinate mapping and analog reports
+- Macro recording timing, insertion commands, persistence acknowledgements,
+  and board macro selection
 
 Project layout:
 
