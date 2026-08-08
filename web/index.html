@@ -9,7 +9,7 @@
       content="Splatoon Raiders 单机素材刷取用 ESP32-S3 有线手柄控制台。"
     />
     <title>Splatoon Farmers · Material Raid Console</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=7" />
   </head>
   <body>
     <div class="ambient-ink ambient-ink-teal" aria-hidden="true"></div>
@@ -46,7 +46,7 @@
           </p>
           <div class="hero-tags" aria-label="功能摘要">
             <span>BOARD-RESIDENT</span>
-            <span>48 STEPS</span>
+            <span data-testid="hero-steps">48 STEPS</span>
             <span>∞ LOOP</span>
           </div>
         </div>
@@ -71,7 +71,7 @@
           <div class="macro-facts" aria-label="脚本信息">
             <div>
               <span>STEPS / 步骤</span>
-              <strong>48</strong>
+              <strong data-testid="steps-total">48</strong>
             </div>
             <div>
               <span>CYCLE / 单轮</span>
@@ -82,6 +82,24 @@
               <strong>板载 Flash</strong>
             </div>
           </div>
+
+          <section class="macro-library" aria-label="板载宏脚本列表">
+            <div>
+              <span>BOARD MACROS / 板载脚本</span>
+              <strong data-testid="active-macro-name">原始素材宏</strong>
+            </div>
+            <select data-testid="macro-select" aria-label="选择板载宏" disabled>
+              <option value="original">原始素材宏 · 48 步</option>
+            </select>
+            <button
+              class="button button-secondary"
+              type="button"
+              data-testid="select-macro-button"
+              disabled
+            >
+              刷写并切换
+            </button>
+          </section>
 
           <div class="progress-block">
             <div class="progress-label">
@@ -126,6 +144,53 @@
               停止
             </button>
           </div>
+
+          <section class="macro-recorder" aria-label="宏录制与更新">
+            <div class="recorder-heading">
+              <div>
+                <span class="recorder-kicker">MACRO RECORDER</span>
+                <strong>从当前步骤后插入操作</strong>
+              </div>
+              <span data-testid="recording-status">等待录制</span>
+            </div>
+            <p data-testid="recording-detail">
+              开始录制会停止当前循环；随后使用下方手动按键，网页会记录按下、松开与间隔。
+            </p>
+            <div class="recorder-controls">
+              <button
+                class="button button-record"
+                type="button"
+                data-testid="record-button"
+                disabled
+              >
+                开始录制
+              </button>
+              <button
+                class="button button-primary"
+                type="button"
+                data-testid="upload-recording-button"
+                disabled
+              >
+                完成并写入
+              </button>
+              <button
+                class="button button-secondary"
+                type="button"
+                data-testid="cancel-recording-button"
+                disabled
+              >
+                取消
+              </button>
+              <button
+                class="button button-stop"
+                type="button"
+                data-testid="reset-macro-button"
+                disabled
+              >
+                恢复原始宏
+              </button>
+            </div>
+          </section>
 
           <p class="browser-note" data-testid="browser-note">
             桌面版 Chrome / Edge · 浏览器只负责发令，不参与脚本计时
@@ -205,6 +270,55 @@
             >
               <span>ZR</span><kbd>3</kbd>
             </button>
+          </div>
+        </div>
+
+        <div class="stick-deck" aria-label="左右虚拟摇杆">
+          <div class="stick-cluster">
+            <div class="stick-label">
+              <span>LEFT STICK / 移动</span>
+              <output data-testid="left-stick-value">128, 128</output>
+            </div>
+            <div
+              class="virtual-stick"
+              data-stick="left"
+              data-testid="left-stick"
+              role="application"
+              aria-label="左摇杆，拖动控制人物移动"
+              aria-disabled="true"
+            >
+              <span class="stick-axis stick-axis-horizontal" aria-hidden="true"></span>
+              <span class="stick-axis stick-axis-vertical" aria-hidden="true"></span>
+              <span class="stick-knob" data-stick-knob aria-hidden="true"></span>
+            </div>
+          </div>
+
+          <div class="stick-help">
+            <strong>双摇杆输入</strong>
+            <span>鼠标拖动或双指同时操作</span>
+            <span>松开后自动回中</span>
+            <output class="stick-diagnostic" data-testid="stick-diagnostic">
+              等待 ESP32 回显
+            </output>
+          </div>
+
+          <div class="stick-cluster">
+            <div class="stick-label">
+              <span>RIGHT STICK / 视角</span>
+              <output data-testid="right-stick-value">128, 128</output>
+            </div>
+            <div
+              class="virtual-stick"
+              data-stick="right"
+              data-testid="right-stick"
+              role="application"
+              aria-label="右摇杆，拖动控制视角"
+              aria-disabled="true"
+            >
+              <span class="stick-axis stick-axis-horizontal" aria-hidden="true"></span>
+              <span class="stick-axis stick-axis-vertical" aria-hidden="true"></span>
+              <span class="stick-knob" data-stick-knob aria-hidden="true"></span>
+            </div>
           </div>
         </div>
 
@@ -426,6 +540,6 @@
       </footer>
     </main>
 
-    <script type="module" src="./app.js"></script>
+    <script type="module" src="./app.js?v=13"></script>
   </body>
 </html>

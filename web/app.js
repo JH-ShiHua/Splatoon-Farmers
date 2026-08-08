@@ -4,7 +4,9 @@ import {
   KEYBOARD_BINDINGS,
   ManualInputState,
 } from "./manual-input.js";
+import { MacroRecorder, macroUploadCommands } from "./macro-recorder.js";
 import { MockSerialTransport, SerialTransport } from "./serial-transport.js";
+import { stickVectorFromPoint, sticksCentered } from "./virtual-stick.js?v=5";
 
 const elements = {
   connectionButton: document.querySelector('[data-testid="connect-button"]'),
@@ -18,11 +20,32 @@ const elements = {
   browserNote: document.querySelector('[data-testid="browser-note"]'),
   errorText: document.querySelector('[data-testid="error-text"]'),
   durationText: document.querySelector('[data-testid="duration-text"]'),
+  stepsTotal: document.querySelector('[data-testid="steps-total"]'),
+  heroSteps: document.querySelector('[data-testid="hero-steps"]'),
+  activeMacroName: document.querySelector('[data-testid="active-macro-name"]'),
+  macroSelect: document.querySelector('[data-testid="macro-select"]'),
+  selectMacroButton: document.querySelector(
+    '[data-testid="select-macro-button"]',
+  ),
   manualStatus: document.querySelector('[data-testid="manual-status"]'),
+  recordButton: document.querySelector('[data-testid="record-button"]'),
+  uploadRecordingButton: document.querySelector(
+    '[data-testid="upload-recording-button"]',
+  ),
+  cancelRecordingButton: document.querySelector(
+    '[data-testid="cancel-recording-button"]',
+  ),
+  resetMacroButton: document.querySelector(
+    '[data-testid="reset-macro-button"]',
+  ),
+  recordingStatus: document.querySelector('[data-testid="recording-status"]'),
+  recordingDetail: document.querySelector('[data-testid="recording-detail"]'),
+  stickDiagnostic: document.querySelector('[data-testid="stick-diagnostic"]'),
 };
 const manualButtons = [
   ...document.querySelectorAll("button[data-control]"),
 ];
+const stickPads = [...document.querySelectorAll("[data-stick]")];
 
 const mockMode = new URLSearchParams(window.location.search).get("mock") === "1";
 const TransportClass = mockMode ? MockSerialTransport : SerialTransport;
@@ -34,9 +57,22 @@ let busy = false;
 let deviceState = "unknown";
 let devicePhase = "idle";
 let currentStep = 0;
+let lastRunningStep = 0;
 let stepCount = 48;
 let pollTimer = null;
 let activeManualControls = new Set();
+const stickState = {
+  left: { x: 128, y: 128 },
+  right: { x: 128, y: 128 },
+};
+let customMacro = false;
+let activeMacroId = "original";
+let customMacroSteps = 0;
+let recordingAnchor = 0;
+let lastSentAxes = null;
+let lastAppliedAxes = null;
+let pendingMacroResponse = null;
+const macroRecorder = new MacroRecorder();
 const manualInputState = new ManualInputState(onManualInputChange);
 
 elements.durationText.textContent = formatDuration(63595);
@@ -47,17 +83,35 @@ function setError(message = "") {
 }
 
 function render() {
-  const manualActive = connected && activeManualControls.size > 0;
+  const manualActive =
+    connected &&
+    (activeManualControls.size > 0 || !sticksCentered(stickState));
   const running = connected && deviceState === "running" && !manualActive;
   elements.connectionButton.textContent = connected ? "断开串口" : "连接手柄";
   elements.connectionButton.disabled = busy || !transportSupported;
   elements.startButton.disabled = busy || !connected || running || manualActive;
   elements.stopButton.disabled = busy || !connected || !running;
+  elements.recordButton.disabled = busy || !connected || macroRecorder.recording;
+  elements.uploadRecordingButton.disabled =
+    busy || !connected || !macroRecorder.recording;
+  elements.cancelRecordingButton.disabled =
+    busy || !connected || !macroRecorder.recording;
+  elements.resetMacroButton.disabled =
+    busy || !connected || macroRecorder.recording || !customMacro;
+  elements.macroSelect.disabled = busy || !connected || macroRecorder.recording;
+  elements.selectMacroButton.disabled =
+    busy ||
+    !connected ||
+    macroRecorder.recording ||
+    elements.macroSelect.value === activeMacroId;
   for (const button of manualButtons) {
     const pressed = activeManualControls.has(button.dataset.control);
     button.disabled = busy || !connected;
     button.classList.toggle("is-pressed", pressed);
     button.setAttribute("aria-pressed", String(pressed));
+  }
+  for (const pad of stickPads) {
+    pad.setAttribute("aria-disabled", String(busy || !connected));
   }
 
   elements.statusBadge.dataset.state = connected
@@ -95,7 +149,9 @@ function render() {
     elements.manualStatus.textContent = "连接后启用";
     elements.manualStatus.dataset.state = "disconnected";
   } else if (manualActive) {
-    elements.manualStatus.textContent = `${activeManualControls.size} 个输入按下`;
+    const activeKinds =
+      activeManualControls.size + (sticksCentered(stickState) ? 0 : 1);
+    elements.manualStatus.textContent = `${activeKinds} 组输入生效`;
     elements.manualStatus.dataset.state = "active";
   } else {
     elements.manualStatus.textContent = "键盘输入已启用";
@@ -103,27 +159,164 @@ function render() {
   }
 
   elements.progress.max = stepCount;
-  elements.progress.value = running ? currentStep : 0;
-  elements.stepText.textContent = running
-    ? `${currentStep} / ${stepCount}`
-    : `0 / ${stepCount}`;
+  elements.progress.value = currentStep;
+  elements.stepText.textContent = `${currentStep} / ${stepCount}`;
+  elements.stepsTotal.textContent = String(stepCount);
+  elements.heroSteps.textContent = `${stepCount} STEPS`;
+  elements.activeMacroName.textContent =
+    activeMacroId === "custom" ? "自定义宏" : "原始素材宏";
+
+  if (macroRecorder.recording) {
+    elements.recordingStatus.textContent = "正在录制";
+    elements.recordingStatus.dataset.state = "recording";
+    elements.recordingDetail.textContent =
+      `插入点：第 ${recordingAnchor} 步之后 · ` +
+      `已捕获 ${macroRecorder.steps.length} 个状态片段；完成后写入开发板。`;
+  } else {
+    elements.recordingStatus.textContent = customMacro ? "自定义宏已保存" : "等待录制";
+    elements.recordingStatus.dataset.state = customMacro ? "saved" : "idle";
+    elements.recordingDetail.textContent = customMacro
+      ? `当前板载宏共 ${stepCount} 步，断电重启后仍会保留。`
+      : "开始录制会停止当前循环；随后使用下方手动按键，网页会记录按下、松开与间隔。";
+  }
+
+  if (lastSentAxes || lastAppliedAxes) {
+    const sent = lastSentAxes
+      ? `TX L${lastSentAxes.leftX},${lastSentAxes.leftY} R${lastSentAxes.rightX},${lastSentAxes.rightY}`
+      : "TX --";
+    const applied = lastAppliedAxes
+      ? `ESP L${lastAppliedAxes.leftX},${lastAppliedAxes.leftY} R${lastAppliedAxes.rightX},${lastAppliedAxes.rightY} HID:${lastAppliedAxes.hidSent ? "OK" : "FAIL"}`
+      : "ESP --";
+    elements.stickDiagnostic.textContent = `${sent} · ${applied}`;
+  } else {
+    elements.stickDiagnostic.textContent = "等待 ESP32 回显";
+  }
+}
+
+function currentAxes() {
+  return {
+    leftX: stickState.left.x,
+    leftY: stickState.left.y,
+    rightX: stickState.right.x,
+    rightY: stickState.right.y,
+  };
+}
+
+function currentManualReport() {
+  return buildManualReport(activeManualControls, currentAxes());
+}
+
+function sendManualState(errorMessage = "手动输入发送失败") {
+  const report = currentManualReport();
+  lastSentAxes = report;
+  macroRecorder.capture(report);
+  if (connected) {
+    deviceState = "idle";
+    devicePhase = "idle";
+    setError();
+  }
+  render();
+  if (!connected || !transport) {
+    return;
+  }
+  transport.send(report.command).catch((error) => {
+    setError(error?.message || errorMessage);
+    render();
+  });
 }
 
 function applyDeviceMessage(message) {
-  if (!message || message.ok === false) {
+  if (!message) {
+    return;
+  }
+  if (message.type === "macro" && pendingMacroResponse) {
+    if (message.ok === false) {
+      pendingMacroResponse.reject(
+        new Error(`宏更新失败：${message.error || "未知错误"}`),
+      );
+    } else if (message.action === pendingMacroResponse.action) {
+      pendingMacroResponse.resolve(message);
+    }
+  }
+  if (message.type === "error" && pendingMacroResponse) {
+    pendingMacroResponse.reject(new Error(message.message || "设备拒绝了这条指令"));
+  }
+  if (message.ok === false) {
     if (message?.message) {
       setError(message.message);
+    } else if (message.type === "macro") {
+      setError(`宏更新失败：${message.error || "未知错误"}`);
     }
     return;
   }
   if (message.type !== "info" && message.type !== "status") {
+    if (message.type === "macro_list") {
+      activeMacroId = message.active === "custom" ? "custom" : "original";
+      customMacroSteps = Number(message.custom_steps) || 0;
+      const hasCustom = Boolean(message.custom_available);
+      elements.macroSelect.replaceChildren();
+      const originalOption = new Option(
+        `原始素材宏 · ${Number(message.original_steps) || 48} 步`,
+        "original",
+      );
+      elements.macroSelect.add(originalOption);
+      if (hasCustom) {
+        elements.macroSelect.add(
+          new Option(`自定义宏 · ${customMacroSteps} 步`, "custom"),
+        );
+      }
+      elements.macroSelect.value = activeMacroId;
+      render();
+    }
+    if (message.type === "report") {
+      lastAppliedAxes = {
+        leftX: Number(message.left_x),
+        leftY: Number(message.left_y),
+        rightX: Number(message.right_x),
+        rightY: Number(message.right_y),
+        hidSent: Boolean(message.hid_sent),
+      };
+      render();
+    }
+    if (message.type === "macro") {
+      if (message.ok === false) {
+        setError(`宏更新失败：${message.error || "未知错误"}`);
+      } else if (message.action === "commit" || message.action === "reset") {
+        customMacro = Boolean(message.custom);
+        stepCount = Number(message.steps) || stepCount;
+        if (message.action === "reset") {
+          currentStep = 0;
+          lastRunningStep = 0;
+        }
+      }
+      render();
+    }
     return;
   }
 
   deviceState = message.state === "running" ? "running" : "idle";
   devicePhase = message.phase || "idle";
-  currentStep = Number(message.step) || 0;
+  const reportedStep = Number(message.step) || 0;
+  if (deviceState === "running" && devicePhase === "steps" && reportedStep > 0) {
+    currentStep = reportedStep;
+    lastRunningStep = reportedStep;
+  } else {
+    currentStep = lastRunningStep;
+  }
   stepCount = Number(message.steps) || 48;
+  customMacro = Boolean(message.custom);
+  activeMacroId = customMacro ? "custom" : "original";
+  if (
+    customMacro &&
+    ![...elements.macroSelect.options].some(
+      (option) => option.value === "custom",
+    )
+  ) {
+    elements.macroSelect.add(
+      new Option(`当前自定义宏 · ${stepCount} 步`, "custom"),
+    );
+    elements.macroSelect.value = "custom";
+  }
   elements.statusBadge.dataset.cycle = String(Number(message.cycle) || 0);
   if (Number.isFinite(message.cycle_ms)) {
     elements.durationText.textContent = formatDuration(message.cycle_ms);
@@ -138,21 +331,7 @@ function onLine(line) {
 
 function onManualInputChange(activeControls) {
   activeManualControls = activeControls;
-  if (connected) {
-    deviceState = "idle";
-    devicePhase = "idle";
-    currentStep = 0;
-    setError();
-  }
-  render();
-
-  if (!connected || !transport) {
-    return;
-  }
-  transport.send(buildManualReport(activeControls).command).catch((error) => {
-    setError(error?.message || "手动输入发送失败");
-    render();
-  });
+  sendManualState();
 }
 
 function onUnexpectedDisconnect(error) {
@@ -161,6 +340,7 @@ function onUnexpectedDisconnect(error) {
   clearInterval(pollTimer);
   pollTimer = null;
   manualInputState.clear();
+  resetAllSticks(false);
   setError(error?.message || "串口连接意外断开");
   render();
 }
@@ -177,6 +357,7 @@ async function connect() {
     await transport.connect();
     connected = true;
     await transport.send("HELLO");
+    await transport.send("MACRO_LIST");
     pollTimer = window.setInterval(() => {
       transport?.send("STATUS").catch(onUnexpectedDisconnect);
     }, 1000);
@@ -194,6 +375,7 @@ async function disconnect() {
   busy = true;
   clearInterval(pollTimer);
   pollTimer = null;
+  resetAllSticks();
   manualInputState.clear();
   render();
   try {
@@ -222,6 +404,34 @@ async function sendCommand(command) {
   }
 }
 
+async function sendMacroCommand(command, expectedAction) {
+  const response = new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(
+      () => reject(new Error(`ESP32 未确认 ${command}`)),
+      3000,
+    );
+    pendingMacroResponse = {
+      action: expectedAction,
+      dispose: () => window.clearTimeout(timeout),
+      resolve: (message) => {
+        window.clearTimeout(timeout);
+        resolve(message);
+      },
+      reject: (error) => {
+        window.clearTimeout(timeout);
+        reject(error);
+      },
+    };
+  });
+  try {
+    await transport.send(command);
+    return await response;
+  } finally {
+    pendingMacroResponse?.dispose();
+    pendingMacroResponse = null;
+  }
+}
+
 elements.connectionButton.addEventListener("click", () => {
   if (connected) {
     disconnect();
@@ -229,8 +439,199 @@ elements.connectionButton.addEventListener("click", () => {
     connect();
   }
 });
-elements.startButton.addEventListener("click", () => sendCommand("START"));
+elements.startButton.addEventListener("click", () => {
+  currentStep = 0;
+  lastRunningStep = 0;
+  sendCommand("START");
+});
 elements.stopButton.addEventListener("click", () => sendCommand("STOP"));
+elements.macroSelect.addEventListener("change", render);
+elements.selectMacroButton.addEventListener("click", async () => {
+  if (!transport || busy) {
+    return;
+  }
+  currentStep = 0;
+  lastRunningStep = 0;
+  await sendCommand(`MACRO_SELECT ${elements.macroSelect.value.toUpperCase()}`);
+  await transport.send("MACRO_LIST").catch(() => {});
+});
+
+elements.recordButton.addEventListener("click", async () => {
+  if (!connected || !transport || busy) {
+    return;
+  }
+  recordingAnchor = Math.max(0, Math.min(currentStep, stepCount));
+  macroRecorder.start(recordingAnchor);
+  activeManualControls = new Set();
+  setError();
+  render();
+  try {
+    await transport.send("STOP");
+  } catch (error) {
+    macroRecorder.reset();
+    setError(error?.message || "无法开始宏录制");
+    render();
+  }
+});
+
+elements.uploadRecordingButton.addEventListener("click", async () => {
+  if (!macroRecorder.recording || !transport || busy) {
+    return;
+  }
+  resetAllSticks();
+  manualInputState.clear();
+  const recordedSteps = macroRecorder.finish();
+  const hasInput = recordedSteps.some(
+    ({ report }) =>
+      report.buttons !== 0 ||
+      report.dpad !== 15 ||
+      report.leftX !== 128 ||
+      report.leftY !== 128 ||
+      report.rightX !== 128 ||
+      report.rightY !== 128,
+  );
+  if (!hasInput) {
+    macroRecorder.reset();
+    setError("没有录到按键或方向输入，未修改宏。");
+    render();
+    return;
+  }
+  if (recordedSteps.length > 96) {
+    macroRecorder.reset();
+    setError("录制产生了超过 96 个状态片段，请缩短操作后分次录制。");
+    render();
+    return;
+  }
+  busy = true;
+  setError();
+  render();
+  try {
+    let confirmation = null;
+    for (const command of macroUploadCommands(recordingAnchor, recordedSteps)) {
+      const expectedAction = command.startsWith("MACRO_BEGIN")
+        ? "begin"
+        : command.startsWith("MACRO_STEP")
+          ? "step"
+          : "commit";
+      confirmation = await sendMacroCommand(command, expectedAction);
+    }
+    customMacro = Boolean(confirmation.custom);
+    stepCount = Number(confirmation.steps) || stepCount;
+    elements.recordingDetail.textContent =
+      `已上传 ${recordedSteps.length} 个步骤，插入在第 ${recordingAnchor} 步之后。`;
+    await transport.send("STATUS");
+    await transport.send("MACRO_LIST");
+  } catch (error) {
+    await transport.send("MACRO_CANCEL").catch(() => {});
+    setError(error?.message || "宏上传失败");
+  } finally {
+    busy = false;
+    render();
+  }
+});
+
+elements.cancelRecordingButton.addEventListener("click", () => {
+  resetAllSticks();
+  manualInputState.clear();
+  macroRecorder.reset();
+  setError();
+  render();
+});
+
+elements.resetMacroButton.addEventListener("click", async () => {
+  if (!transport || busy) {
+    return;
+  }
+  await sendCommand("MACRO_RESET");
+});
+
+function setStickPosition(name, vector, pad, send = true) {
+  stickState[name].x = vector.x;
+  stickState[name].y = vector.y;
+  const maxOffset = pad.clientWidth * 0.3;
+  const knob = pad.querySelector("[data-stick-knob]");
+  knob.style.transform =
+    `translate(-50%, -50%) translate(` +
+    `${vector.normalizedX * maxOffset}px, ${vector.normalizedY * maxOffset}px)`;
+  const output = document.querySelector(`[data-testid="${name}-stick-value"]`);
+  output.textContent = `${vector.x}, ${vector.y}`;
+  if (send) {
+    sendManualState("摇杆输入发送失败");
+  } else {
+    render();
+  }
+}
+
+function centerStick(name, pad, send = true) {
+  pad.dataset.active = "false";
+  setStickPosition(
+    name,
+    { x: 128, y: 128, normalizedX: 0, normalizedY: 0 },
+    pad,
+    send,
+  );
+}
+
+function resetAllSticks(send = true) {
+  const hadAnalogInput = !sticksCentered(stickState);
+  for (const pad of stickPads) {
+    centerStick(pad.dataset.stick, pad, false);
+  }
+  if (send && hadAnalogInput) {
+    sendManualState("摇杆回中发送失败");
+  }
+}
+
+const activeStickPointers = new Map();
+
+function updateStickFromPointer(name, pad, event) {
+    const vector = stickVectorFromPoint(
+      event.clientX,
+      event.clientY,
+      pad.getBoundingClientRect(),
+    );
+    setStickPosition(name, vector, pad);
+}
+
+for (const pad of stickPads) {
+  const name = pad.dataset.stick;
+
+  pad.addEventListener("pointerdown", (event) => {
+    if (!connected || busy || activeStickPointers.has(event.pointerId)) {
+      return;
+    }
+    event.preventDefault();
+    activeStickPointers.set(event.pointerId, { name, pad });
+    pad.dataset.active = "true";
+    updateStickFromPointer(name, pad, event);
+  });
+  pad.addEventListener("contextmenu", (event) => event.preventDefault());
+}
+
+window.addEventListener(
+  "pointermove",
+  (event) => {
+    const activeStick = activeStickPointers.get(event.pointerId);
+    if (!activeStick) {
+      return;
+    }
+    event.preventDefault();
+    updateStickFromPointer(activeStick.name, activeStick.pad, event);
+  },
+  { passive: false },
+);
+
+function releaseStickPointer(event) {
+  const activeStick = activeStickPointers.get(event.pointerId);
+  if (!activeStick) {
+    return;
+  }
+  activeStickPointers.delete(event.pointerId);
+  centerStick(activeStick.name, activeStick.pad);
+}
+
+window.addEventListener("pointerup", releaseStickPointer);
+window.addEventListener("pointercancel", releaseStickPointer);
 
 function pointerSource(pointerId) {
   return `pointer:${pointerId}`;
@@ -315,10 +716,14 @@ window.addEventListener("keyup", (event) => {
   manualInputState.release(source);
 });
 
-window.addEventListener("blur", () => manualInputState.clear());
+window.addEventListener("blur", () => {
+  manualInputState.clear();
+  resetAllSticks();
+});
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     manualInputState.clear();
+    resetAllSticks();
   }
 });
 

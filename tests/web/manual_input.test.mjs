@@ -61,6 +61,18 @@ test("manual reports keep both analog sticks centered", () => {
   assert.equal(buildManualReport([]).command, "R 0 15 128 128 128 128");
 });
 
+test("manual reports include virtual-stick axes with button state", () => {
+  assert.equal(
+    buildManualReport(["ZR"], {
+      leftX: 255,
+      leftY: 128,
+      rightX: 64,
+      rightY: 1,
+    }).command,
+    "R 128 15 255 128 64 1",
+  );
+});
+
 test("every digital control has one keyboard binding and one UI button", async () => {
   const keyboardControls = [...new Set(Object.values(KEYBOARD_BINDINGS))].sort();
   assert.deepEqual(keyboardControls, [...ALL_CONTROLS].sort());

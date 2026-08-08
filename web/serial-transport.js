@@ -135,6 +135,12 @@ export class MockSerialTransport {
     this.step = 0;
     this.cycle = 0;
     this.lastReport = null;
+    this.custom = false;
+    this.customAvailable = false;
+    this.customSteps = 0;
+    this.steps = 48;
+    this.pendingMacro = null;
+    this.activeMacro = "original";
   }
 
   static isSupported() {
@@ -163,6 +169,24 @@ export class MockSerialTransport {
       this.emit("info");
     } else if (command === "STATUS") {
       this.emit("status");
+    } else if (command === "MACRO_LIST") {
+      this.emitMacroList();
+    } else if (command === "MACRO_SELECT ORIGINAL") {
+      this.activeMacro = "original";
+      this.custom = false;
+      this.steps = 48;
+      this.emitMacroList();
+      this.emit("status");
+    } else if (command === "MACRO_SELECT CUSTOM") {
+      if (!this.customAvailable) {
+        this.emitMacro("select", false, "custom_not_found");
+      } else {
+        this.activeMacro = "custom";
+        this.custom = true;
+        this.steps = this.customSteps;
+        this.emitMacroList();
+        this.emit("status");
+      }
     } else if (command === "PING") {
       this.onLine("PONG");
     } else if (/^R \d+ \d+ \d+ \d+ \d+ \d+$/.test(command)) {
@@ -170,7 +194,61 @@ export class MockSerialTransport {
       this.phase = "idle";
       this.step = 0;
       this.lastReport = command;
-      this.onLine("OK");
+      const [, buttons, dpad, leftX, leftY, rightX, rightY] = command
+        .split(" ")
+        .map(Number);
+      this.onLine(
+        JSON.stringify({
+          type: "report",
+          ok: true,
+          hid_sent: true,
+          buttons,
+          dpad,
+          left_x: leftX,
+          left_y: leftY,
+          right_x: rightX,
+          right_y: rightY,
+        }),
+      );
+    } else if (/^MACRO_BEGIN \d+ \d+$/.test(command)) {
+      const [, anchor, count] = command.split(" ").map(Number);
+      this.pendingMacro = { anchor, count, received: 0 };
+      this.emitMacro("begin", true);
+    } else if (/^MACRO_STEP \d+ \d+ \d+ \d+ \d+ \d+ \d+$/.test(command)) {
+      if (!this.pendingMacro) {
+        this.emitMacro("step", false, "invalid_step");
+      } else {
+        this.pendingMacro.received += 1;
+        this.emitMacro("step", true);
+      }
+    } else if (command === "MACRO_COMMIT") {
+      if (
+        !this.pendingMacro ||
+        this.pendingMacro.received !== this.pendingMacro.count
+      ) {
+        this.emitMacro("commit", false, "incomplete_upload");
+      } else {
+        this.steps += this.pendingMacro.count;
+        this.pendingMacro = null;
+        this.custom = true;
+        this.customAvailable = true;
+        this.customSteps = this.steps;
+        this.activeMacro = "custom";
+        this.emitMacro("commit", true);
+        this.emit("status");
+      }
+    } else if (command === "MACRO_CANCEL") {
+      this.pendingMacro = null;
+      this.emitMacro("cancel", true);
+    } else if (command === "MACRO_RESET") {
+      this.pendingMacro = null;
+      this.custom = false;
+      this.customAvailable = false;
+      this.customSteps = 0;
+      this.activeMacro = "original";
+      this.steps = 48;
+      this.emitMacro("reset", true);
+      this.emit("status");
     } else {
       this.onLine("ERR");
     }
@@ -188,14 +266,41 @@ export class MockSerialTransport {
         firmware: "SplatoonFarmers/mock",
         routine: "material-farm",
         embedded: true,
+        custom: this.custom,
         state: this.state,
         phase: this.phase,
         step: this.step,
-        steps: 48,
+        steps: this.steps,
         cycle: this.cycle,
         duration_ms: 61010,
         loop_gap_ms: 2585,
         cycle_ms: 63595,
+      }),
+    );
+  }
+
+  emitMacroList() {
+    this.onLine(
+      JSON.stringify({
+        type: "macro_list",
+        ok: true,
+        active: this.activeMacro,
+        original_steps: 48,
+        custom_available: this.customAvailable,
+        custom_steps: this.customAvailable ? this.customSteps : 0,
+      }),
+    );
+  }
+
+  emitMacro(action, ok, error = "") {
+    this.onLine(
+      JSON.stringify({
+        type: "macro",
+        ok,
+        action,
+        error,
+        steps: this.steps,
+        custom: this.custom,
       }),
     );
   }

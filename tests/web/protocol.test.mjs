@@ -59,6 +59,35 @@ test("manual raw report stops the mock macro and is acknowledged", async () => {
   await transport.send("STATUS");
 
   assert.equal(transport.lastReport, "R 20 0 128 128 128 128");
-  assert.deepEqual(lines[1], { type: "ack", ok: true });
+  assert.deepEqual(lines[1], {
+    type: "report",
+    ok: true,
+    hid_sent: true,
+    buttons: 20,
+    dpad: 0,
+    left_x: 128,
+    left_y: 128,
+    right_x: 128,
+    right_y: 128,
+  });
   assert.equal(lines[2].state, "idle");
+});
+
+test("mock transport accepts a recorded macro insertion", async () => {
+  const lines = [];
+  const transport = new MockSerialTransport({
+    onLine: (line) => lines.push(parseDeviceLine(line)),
+    onDisconnect: () => assert.fail("mock should not disconnect"),
+  });
+
+  await transport.connect();
+  await transport.send("MACRO_BEGIN 5 2");
+  await transport.send("MACRO_STEP 100 4 15 128 128 128 128");
+  await transport.send("MACRO_STEP 80 0 15 128 128 128 128");
+  await transport.send("MACRO_COMMIT");
+
+  assert.equal(transport.steps, 50);
+  assert.equal(transport.custom, true);
+  assert.equal(lines.at(-2).action, "commit");
+  assert.equal(lines.at(-1).steps, 50);
 });

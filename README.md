@@ -23,9 +23,8 @@ Required gears described in this video: [Bilibili](https://www.bilibili.com/vide
 - Keeps the complete 48-step, `63.595 s` loop in firmware Flash.
 - Continues a running loop if the browser or USB-UART connection drops.
 - Starts, stops, and reports progress through a Web Serial page.
-- Provides every digital controller button and D-pad direction for mouse,
-  touch, and keyboard input.
-- Leaves both analog sticks centered during manual input.
+- Provides every digital controller button, D-pad direction, and two analog
+  virtual sticks for mouse, touch, and keyboard-assisted input.
 
 The browser sends only high-level `START`, `STOP`, and status commands during
 automatic operation. Timing is owned by the microcontroller, so normal serial
@@ -100,6 +99,10 @@ stop it, reset the board, or remove power when you need to end it.
 Manual input stops the automatic routine before sending a raw controller
 report. Buttons support hold, multi-key combinations, mouse, multitouch, and
 keyboard. Losing focus or hiding the tab releases all browser-held inputs.
+The left virtual stick controls `lx/ly`, the right virtual stick controls
+`rx/ry`, and both return to `128,128` when released. Two touch pointers can
+operate both sticks simultaneously. Analog movements are also captured by the
+WebUI macro recorder.
 
 | Controller | Keyboard | Controller | Keyboard |
 | --- | --- | --- | --- |
@@ -123,9 +126,24 @@ The control link is `115200 baud`, ASCII, one command per line.
 | `STATUS` | Return phase, step, cycle count, and timing |
 | `PING` | Return `PONG` |
 | `R buttons dpad lx ly rx ry` | Stop the routine and send one complete HID report |
+| `MACRO_BEGIN anchor count` | Begin uploading steps to insert after `anchor` existing steps |
+| `MACRO_STEP ms buttons dpad lx ly rx ry` | Append one timed controller report to the pending upload |
+| `MACRO_COMMIT` | Insert, activate, and persist the uploaded steps in NVS |
+| `MACRO_CANCEL` | Discard a pending upload |
+| `MACRO_RESET` | Restore the embedded 48-step routine |
 
 The raw report command keeps the firmware useful for future computer-loaded
 routines without changing the board protocol.
+
+### Record and insert a macro from the WebUI
+
+1. Connect the USB-UART port and let the page read the current step.
+2. Select **开始录制**. The page remembers that step as the insertion point and stops the running routine.
+3. Use the manual controller buttons or keyboard. Presses, releases, combinations, and neutral delays are recorded with millisecond timing.
+4. Select **完成并写入**. The recording is inserted after the captured step and the original suffix remains in place.
+5. Select **开始刷取** to run the updated board-resident macro from step 1.
+
+The resulting macro is stored in ESP32 NVS and survives reset or power loss. Use **恢复原始宏** to delete it and return to the embedded routine. A macro may contain up to 160 total steps, with up to 96 steps added by one recording.
 
 ## Development
 
