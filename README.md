@@ -88,6 +88,24 @@ npm run serve
 Open <http://localhost:4173> in desktop Chrome or Edge. Web Serial requires a
 secure context, so opening `web/index.html` directly is not supported.
 
+### Start the WebUI after a Windows restart
+
+The local web server is a normal computer process and does not survive a
+Windows restart. It does not depend on Codex. On this Windows installation,
+double-click [`start-webui.cmd`](./start-webui.cmd); it starts the no-cache
+server with `D:\Python\pythonw.exe` and opens <http://localhost:4173/>.
+
+The equivalent manual command is:
+
+```powershell
+D:\Python\python.exe tools\serve_web.py
+```
+
+Keep that terminal open while using the page. The double-click launcher uses
+`pythonw.exe`, so it runs without a visible terminal window. To launch the page
+automatically at Windows sign-in, place a shortcut to `start-webui.cmd` in
+`shell:startup`.
+
 ## Use
 
 1. Select **连接手柄** and choose the DevKitC-1 USB-UART port.
