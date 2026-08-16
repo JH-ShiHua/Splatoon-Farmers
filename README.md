@@ -158,6 +158,30 @@ The left virtual stick controls `lx/ly`, the right virtual stick controls
 operate both sticks simultaneously. Analog movements are also captured by the
 WebUI macro recorder.
 
+### Physical gamepad mapping
+
+Connect a standard USB or Bluetooth gamepad to the computer, then press one of
+its buttons so Chrome or Edge exposes it through the browser Gamepad API. The
+WebUI shows the detected controller name beside the virtual sticks. Physical
+gamepad input uses the same manual-report and macro-recording path as the
+on-screen controls, so buttons and analog movement can be recorded directly
+into inserted or replacement macros.
+
+| Standard gamepad input | Switch output |
+| --- | --- |
+| Bottom / right / left / top face buttons | B / A / Y / X |
+| LB / RB | L / R |
+| LT / RT | ZL / ZR |
+| Back / Start | Minus / Plus |
+| Left-stick / right-stick click | L3 / R3 |
+| D-pad | D-pad |
+| Guide / extra button, when exposed | Home / Capture |
+| Axes 0-1 / axes 2-3 | Left stick / right stick |
+
+A radial `12%` deadzone is applied to both physical sticks. Browser and
+controller drivers may hide the Guide/Home button from web pages; that is a
+platform restriction rather than an ESP32 mapping failure.
+
 | Controller | Keyboard | Controller | Keyboard |
 | --- | --- | --- | --- |
 | X / Y / B / A | I / J / K / L | D-pad | Arrow keys |

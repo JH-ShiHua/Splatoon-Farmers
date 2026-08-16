@@ -1,5 +1,9 @@
 import { formatDuration, parseDeviceLine } from "./protocol.js";
 import {
+  GAMEPAD_BUTTON_BINDINGS,
+  gamepadSnapshot,
+} from "./gamepad-input.js";
+import {
   buildManualReport,
   KEYBOARD_BINDINGS,
   ManualInputState,
@@ -48,6 +52,7 @@ const elements = {
   recordingStatus: document.querySelector('[data-testid="recording-status"]'),
   recordingDetail: document.querySelector('[data-testid="recording-detail"]'),
   stickDiagnostic: document.querySelector('[data-testid="stick-diagnostic"]'),
+  gamepadStatus: document.querySelector('[data-testid="gamepad-status"]'),
 };
 const manualButtons = [
   ...document.querySelectorAll("button[data-control]"),
@@ -80,6 +85,8 @@ let recordingMode = "insert";
 let lastSentAxes = null;
 let lastAppliedAxes = null;
 let pendingMacroResponse = null;
+let activeGamepadIndex = null;
+let gamepadAxesActive = false;
 const macroRecorder = new MacroRecorder();
 const manualInputState = new ManualInputState(onManualInputChange);
 
@@ -759,6 +766,76 @@ document.addEventListener("visibilitychange", () => {
     resetAllSticks();
   }
 });
+
+function gamepadSource(index, control) {
+  return `gamepad:${index}:${control}`;
+}
+
+function releaseGamepadButtons(index) {
+  for (const control of Object.values(GAMEPAD_BUTTON_BINDINGS)) {
+    manualInputState.release(gamepadSource(index, control));
+  }
+}
+
+function pollPhysicalGamepad() {
+  const gamepads = navigator.getGamepads?.() || [];
+  const gamepad =
+    (activeGamepadIndex !== null && gamepads[activeGamepadIndex]) ||
+    [...gamepads].find((candidate) => candidate?.connected);
+
+  if (!gamepad) {
+    if (activeGamepadIndex !== null) {
+      releaseGamepadButtons(activeGamepadIndex);
+      activeGamepadIndex = null;
+    }
+    elements.gamepadStatus.textContent = navigator.getGamepads
+      ? "实体手柄：等待连接"
+      : "实体手柄：浏览器不支持";
+    if (gamepadAxesActive && activeStickPointers.size === 0) {
+      gamepadAxesActive = false;
+      resetAllSticks();
+    }
+    window.requestAnimationFrame(pollPhysicalGamepad);
+    return;
+  }
+
+  if (activeGamepadIndex !== null && activeGamepadIndex !== gamepad.index) {
+    releaseGamepadButtons(activeGamepadIndex);
+  }
+  activeGamepadIndex = gamepad.index;
+  elements.gamepadStatus.textContent = `实体手柄：${gamepad.id || `#${gamepad.index}`}`;
+  const snapshot = gamepadSnapshot(gamepad);
+
+  if (activeStickPointers.size === 0) {
+    const axesChanged =
+      stickState.left.x !== snapshot.left.x ||
+      stickState.left.y !== snapshot.left.y ||
+      stickState.right.x !== snapshot.right.x ||
+      stickState.right.y !== snapshot.right.y;
+    if (axesChanged) {
+      setStickPosition("left", snapshot.left, stickPads[0], false);
+      setStickPosition("right", snapshot.right, stickPads[1], false);
+      gamepadAxesActive =
+        snapshot.left.x !== 128 ||
+        snapshot.left.y !== 128 ||
+        snapshot.right.x !== 128 ||
+        snapshot.right.y !== 128;
+      sendManualState("实体手柄摇杆输入发送失败");
+    }
+  }
+
+  for (const control of Object.values(GAMEPAD_BUTTON_BINDINGS)) {
+    const source = gamepadSource(gamepad.index, control);
+    if (snapshot.controls.has(control)) {
+      manualInputState.press(source, control);
+    } else {
+      manualInputState.release(source);
+    }
+  }
+  window.requestAnimationFrame(pollPhysicalGamepad);
+}
+
+window.requestAnimationFrame(pollPhysicalGamepad);
 
 if (!transportSupported) {
   elements.connectionButton.disabled = true;
