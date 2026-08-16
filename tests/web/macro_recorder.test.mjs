@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   MacroRecorder,
+  macroActionUploadCommands,
+  macroActionsFromSteps,
   macroReplaceCommands,
   macroUploadCommands,
   NEUTRAL_REPORT,
@@ -72,6 +74,22 @@ test("turns a new recording into the full-replacement protocol", () => {
       "MACRO_COMMIT",
     ],
   );
+});
+
+test("pairs press and release timing into one logical action", () => {
+  const actions = macroActionsFromSteps([
+    { durationMs: 250, report: NEUTRAL_REPORT },
+    { durationMs: 120, report: reportA },
+    { durationMs: 500, report: NEUTRAL_REPORT },
+  ]);
+  assert.deepEqual(actions, [
+    { holdMs: 120, waitMs: 500, report: reportA },
+  ]);
+  assert.deepEqual(macroActionUploadCommands(actions), [
+    "MACRO_ACTION_BEGIN 1",
+    "MACRO_ACTION 120 500 4 15 128 128 128 128",
+    "MACRO_ACTION_COMMIT",
+  ]);
 });
 
 test("turns recorded steps into the firmware upload protocol", () => {

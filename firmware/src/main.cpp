@@ -24,21 +24,33 @@
 namespace {
 
 constexpr uint32_t kControlBaudRate = 115200;
-constexpr char kFirmwareVersion[] = "SplatoonFarmers/1.2.0";
-constexpr size_t kMaxMacroSteps = 160;
-constexpr size_t kMaxUploadedSteps = kMaxMacroSteps;
+constexpr char kFirmwareVersion[] = "SplatoonFarmers/1.3.0";
+constexpr size_t kMaxLogicalActions = 500;
+constexpr size_t kMaxMacroSteps = kMaxLogicalActions * 2;
+constexpr size_t kMaxUploadedSteps = kMaxLogicalActions;
 constexpr uint32_t kMaxStepDurationMs = 600000;
 constexpr uint32_t kAutoStartDelayMs = 2000;
 
 NSGamepad Gamepad;
+struct RecordedMacroAction {
+  uint32_t holdMs;
+  uint32_t waitMs;
+  farmers::ControllerReport report;
+};
+
 farmers::MacroStep ActiveMacro[kMaxMacroSteps];
 farmers::MacroStep UploadedSteps[kMaxUploadedSteps];
+RecordedMacroAction UploadedActions[kMaxLogicalActions];
+uint16_t ActiveVisibleStep[kMaxMacroSteps];
 size_t ActiveMacroStepCount = 0;
+size_t ActiveLogicalStepCount = 0;
 size_t UploadedStepCount = 0;
+size_t UploadedActionCount = 0;
 size_t UploadExpectedCount = 0;
 size_t UploadAnchor = 0;
 bool UploadActive = false;
 bool UploadReplace = false;
+bool ActionUploadActive = false;
 bool CustomMacroLoaded = false;
 bool SavedCustomAvailable = false;
 bool AutoStartPending = true;
@@ -63,7 +75,52 @@ void loadEmbeddedMacro() {
   memcpy(ActiveMacro, farmers::kMaterialFarmMacro,
          sizeof(farmers::kMaterialFarmMacro));
   ActiveMacroStepCount = farmers::kMaterialFarmStepCount;
+  ActiveLogicalStepCount = ActiveMacroStepCount;
+  for (size_t index = 0; index < ActiveMacroStepCount; ++index) {
+    ActiveVisibleStep[index] = static_cast<uint16_t>(index + 1);
+  }
   CustomMacroLoaded = false;
+}
+
+void rebuildSequentialVisibleSteps() {
+  ActiveLogicalStepCount = ActiveMacroStepCount;
+  for (size_t index = 0; index < ActiveMacroStepCount; ++index) {
+    ActiveVisibleStep[index] = static_cast<uint16_t>(index + 1);
+  }
+}
+
+bool loadSavedActions() {
+  const size_t actionCount = MacroPreferences.getUShort("acount", 0);
+  const size_t savedBytes = MacroPreferences.getBytesLength("actions");
+  if (actionCount == 0 || actionCount > kMaxLogicalActions ||
+      savedBytes != actionCount * sizeof(RecordedMacroAction)) {
+    return false;
+  }
+  if (MacroPreferences.getBytes("actions", UploadedActions, savedBytes) !=
+      savedBytes) {
+    return false;
+  }
+  ActiveMacroStepCount = 0;
+  for (size_t index = 0; index < actionCount; ++index) {
+    const RecordedMacroAction& action = UploadedActions[index];
+    if (action.holdMs == 0 || action.holdMs > kMaxStepDurationMs ||
+        action.waitMs > kMaxStepDurationMs) {
+      return false;
+    }
+    ActiveMacro[ActiveMacroStepCount] = {action.holdMs, action.report};
+    ActiveVisibleStep[ActiveMacroStepCount++] =
+        static_cast<uint16_t>(index + 1);
+    if (action.waitMs > 0) {
+      ActiveMacro[ActiveMacroStepCount] = {action.waitMs,
+                                           farmers::kNeutralReport};
+      ActiveVisibleStep[ActiveMacroStepCount++] =
+          static_cast<uint16_t>(index + 1);
+    }
+  }
+  ActiveLogicalStepCount = actionCount;
+  CustomMacroLoaded = true;
+  SavedCustomAvailable = true;
+  return true;
 }
 
 bool loadSavedMacro() {
@@ -84,6 +141,7 @@ bool loadSavedMacro() {
     }
   }
   ActiveMacroStepCount = savedCount;
+  rebuildSequentialVisibleSteps();
   CustomMacroLoaded = true;
   SavedCustomAvailable = true;
   return true;
@@ -98,11 +156,29 @@ bool saveActiveMacro() {
              "count", static_cast<uint16_t>(ActiveMacroStepCount)) ==
          sizeof(uint16_t);
   SavedCustomAvailable = saved;
+  if (saved) {
+    MacroPreferences.remove("actions");
+    MacroPreferences.remove("acount");
+  }
   return saved;
 }
 
+bool saveRecordedActions(size_t actionCount) {
+  const size_t bytes = actionCount * sizeof(RecordedMacroAction);
+  if (MacroPreferences.putBytes("actions", UploadedActions, bytes) != bytes ||
+      MacroPreferences.putUShort("acount", static_cast<uint16_t>(actionCount)) !=
+          sizeof(uint16_t)) {
+    return false;
+  }
+  MacroPreferences.remove("steps");
+  MacroPreferences.remove("count");
+  SavedCustomAvailable = true;
+  return true;
+}
+
 void emitMacroList() {
-  const size_t savedCount = MacroPreferences.getUShort("count", 0);
+  const size_t savedCount = MacroPreferences.getUShort(
+      "acount", MacroPreferences.getUShort("count", 0));
   ATT_CONTROL_SERIAL.printf(
       "{\"type\":\"macro_list\",\"ok\":true,\"active\":\"%s\"," 
       "\"original_steps\":%u,\"custom_available\":%s,\"custom_steps\":%u}\n",
@@ -117,7 +193,7 @@ void emitMacroResult(bool ok, const char* action, const char* error = "") {
       "{\"type\":\"macro\",\"ok\":%s,\"action\":\"%s\"," 
       "\"error\":\"%s\",\"steps\":%u,\"custom\":%s}\n",
       ok ? "true" : "false", action, error,
-      static_cast<unsigned int>(ActiveMacroStepCount),
+      static_cast<unsigned int>(ActiveLogicalStepCount),
       CustomMacroLoaded ? "true" : "false");
 }
 
@@ -173,8 +249,9 @@ const char* phaseName(farmers::MacroPhase phase) {
 }
 
 void emitState(const char* type) {
-  const size_t visibleStep =
-      Macro.phase() == farmers::MacroPhase::kSteps ? Macro.stepIndex() + 1 : 0;
+  const size_t visibleStep = Macro.phase() == farmers::MacroPhase::kSteps
+                                 ? ActiveVisibleStep[Macro.stepIndex()]
+                                 : 0;
   ATT_CONTROL_SERIAL.printf(
       "{\"type\":\"%s\",\"ok\":true,\"firmware\":\"%s\","
       "\"routine\":\"material-farm\",\"embedded\":true,\"custom\":%s,"
@@ -184,7 +261,7 @@ void emitState(const char* type) {
       type, kFirmwareVersion, CustomMacroLoaded ? "true" : "false",
       Macro.running() ? "running" : "idle",
       phaseName(Macro.phase()), static_cast<unsigned int>(visibleStep),
-      static_cast<unsigned int>(ActiveMacroStepCount),
+      static_cast<unsigned int>(ActiveLogicalStepCount),
       static_cast<unsigned long>(Macro.cycleCount()),
       static_cast<unsigned long>(activeMacroDurationMs()),
       static_cast<unsigned long>(farmers::kMaterialFarmLoopGapMs),
@@ -251,7 +328,7 @@ void handleLine(char* line) {
     AutoStartPending = false;
     Macro.stop();
     flushMacroReport();
-    if (!loadSavedMacro()) {
+    if (!loadSavedActions() && !loadSavedMacro()) {
       emitMacroResult(false, "select", "custom_not_found");
       return;
     }
@@ -279,6 +356,10 @@ void handleLine(char* line) {
   size_t anchor = 0;
   size_t expected = 0;
   if (sscanf(line, "MACRO_BEGIN %u %u", &anchor, &expected) == 2) {
+    if (ActiveLogicalStepCount != ActiveMacroStepCount) {
+      emitMacroResult(false, "begin", "action_macro_insert_unsupported");
+      return;
+    }
     if (anchor > ActiveMacroStepCount || expected == 0 ||
         expected > kMaxUploadedSteps ||
         ActiveMacroStepCount + expected > kMaxMacroSteps) {
@@ -294,6 +375,67 @@ void handleLine(char* line) {
     UploadActive = true;
     UploadReplace = false;
     emitMacroResult(true, "begin");
+    return;
+  }
+
+  if (sscanf(line, "MACRO_ACTION_BEGIN %u", &expected) == 1) {
+    if (expected == 0 || expected > kMaxLogicalActions) {
+      emitMacroResult(false, "action_begin", "invalid_size");
+      return;
+    }
+    AutoStartPending = false;
+    Macro.stop();
+    flushMacroReport();
+    UploadedActionCount = 0;
+    UploadExpectedCount = expected;
+    UploadActive = false;
+    ActionUploadActive = true;
+    emitMacroResult(true, "action_begin");
+    return;
+  }
+
+  unsigned long actionHold = 0;
+  unsigned long actionWait = 0;
+  unsigned long actionButtons = 0;
+  unsigned long actionDpad = 0;
+  unsigned long actionLeftX = 0;
+  unsigned long actionLeftY = 0;
+  unsigned long actionRightX = 0;
+  unsigned long actionRightY = 0;
+  if (sscanf(line, "MACRO_ACTION %lu %lu %lu %lu %lu %lu %lu %lu",
+             &actionHold, &actionWait, &actionButtons, &actionDpad,
+             &actionLeftX, &actionLeftY, &actionRightX, &actionRightY) == 8) {
+    if (!ActionUploadActive || UploadedActionCount >= UploadExpectedCount ||
+        actionHold == 0 || actionHold > kMaxStepDurationMs ||
+        actionWait > kMaxStepDurationMs) {
+      emitMacroResult(false, "action", "invalid_action");
+      return;
+    }
+    UploadedActions[UploadedActionCount++] = RecordedMacroAction{
+        static_cast<uint32_t>(actionHold), static_cast<uint32_t>(actionWait),
+        farmers::ControllerReport{
+            static_cast<uint16_t>(actionButtons & 0x3fff),
+            normalizeDpad(actionDpad), clampAxis(actionLeftX),
+            clampAxis(actionLeftY), clampAxis(actionRightX),
+            clampAxis(actionRightY)}};
+    emitMacroResult(true, "action");
+    return;
+  }
+
+  if (strcmp(line, "MACRO_ACTION_COMMIT") == 0) {
+    if (!ActionUploadActive || UploadedActionCount != UploadExpectedCount) {
+      emitMacroResult(false, "action_commit", "incomplete_upload");
+      return;
+    }
+    ActionUploadActive = false;
+    if (!saveRecordedActions(UploadedActionCount) || !loadSavedActions()) {
+      emitMacroResult(false, "action_commit", "save_failed");
+      return;
+    }
+    Macro.configure(ActiveMacro, ActiveMacroStepCount,
+                    farmers::kMaterialFarmLoopGapMs);
+    emitMacroResult(true, "action_commit");
+    emitState("status");
     return;
   }
 
@@ -360,6 +502,7 @@ void handleLine(char* line) {
     }
     UploadActive = false;
     UploadReplace = false;
+    rebuildSequentialVisibleSteps();
     CustomMacroLoaded = true;
     SavedCustomAvailable = true;
     Macro.configure(ActiveMacro, ActiveMacroStepCount,
@@ -376,6 +519,7 @@ void handleLine(char* line) {
   if (strcmp(line, "MACRO_CANCEL") == 0) {
     UploadActive = false;
     UploadReplace = false;
+    ActionUploadActive = false;
     UploadedStepCount = 0;
     UploadExpectedCount = 0;
     emitMacroResult(true, "cancel");
@@ -393,6 +537,7 @@ void handleLine(char* line) {
                     farmers::kMaterialFarmLoopGapMs);
     UploadActive = false;
     UploadReplace = false;
+    ActionUploadActive = false;
     emitMacroResult(true, "reset");
     emitState("status");
     return;
@@ -469,9 +614,11 @@ void setup() {
   ATT_CONTROL_SERIAL.begin(kControlBaudRate);
   MacroPreferences.begin("splatoonfarm", false);
   SavedCustomAvailable =
-      MacroPreferences.getUShort("count", 0) > 0 &&
-      MacroPreferences.getBytesLength("steps") > 0;
-  if (!loadSavedMacro()) {
+      (MacroPreferences.getUShort("acount", 0) > 0 &&
+       MacroPreferences.getBytesLength("actions") > 0) ||
+      (MacroPreferences.getUShort("count", 0) > 0 &&
+       MacroPreferences.getBytesLength("steps") > 0);
+  if (!loadSavedActions() && !loadSavedMacro()) {
     loadEmbeddedMacro();
   }
   Macro.configure(ActiveMacro, ActiveMacroStepCount,

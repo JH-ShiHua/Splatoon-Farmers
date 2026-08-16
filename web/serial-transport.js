@@ -218,12 +218,45 @@ export class MockSerialTransport {
       const [, count] = command.split(" ").map(Number);
       this.pendingMacro = { anchor: 0, count, received: 0, replace: true };
       this.emitMacro("replace_begin", true);
+    } else if (/^MACRO_ACTION_BEGIN \d+$/.test(command)) {
+      const [, count] = command.split(" ").map(Number);
+      this.pendingMacro = {
+        anchor: 0,
+        count,
+        received: 0,
+        replace: true,
+        actions: true,
+      };
+      this.emitMacro("action_begin", true);
+    } else if (/^MACRO_ACTION \d+ \d+ \d+ \d+ \d+ \d+ \d+ \d+$/.test(command)) {
+      if (!this.pendingMacro?.actions) {
+        this.emitMacro("action", false, "invalid_action");
+      } else {
+        this.pendingMacro.received += 1;
+        this.emitMacro("action", true);
+      }
     } else if (/^MACRO_STEP \d+ \d+ \d+ \d+ \d+ \d+ \d+$/.test(command)) {
       if (!this.pendingMacro) {
         this.emitMacro("step", false, "invalid_step");
       } else {
         this.pendingMacro.received += 1;
         this.emitMacro("step", true);
+      }
+    } else if (command === "MACRO_ACTION_COMMIT") {
+      if (
+        !this.pendingMacro?.actions ||
+        this.pendingMacro.received !== this.pendingMacro.count
+      ) {
+        this.emitMacro("action_commit", false, "incomplete_upload");
+      } else {
+        this.steps = this.pendingMacro.count;
+        this.pendingMacro = null;
+        this.custom = true;
+        this.customAvailable = true;
+        this.customSteps = this.steps;
+        this.activeMacro = "custom";
+        this.emitMacro("action_commit", true);
+        this.emit("status");
       }
     } else if (command === "MACRO_COMMIT") {
       if (

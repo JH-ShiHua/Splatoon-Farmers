@@ -213,6 +213,9 @@ The control link is `115200 baud`, ASCII, one command per line.
 | `R buttons dpad lx ly rx ry` | Stop the routine and send one complete HID report |
 | `MACRO_BEGIN anchor count` | Begin uploading steps to insert after `anchor` existing steps |
 | `MACRO_REPLACE_BEGIN count` | Begin uploading a completely new custom macro that replaces the previous custom routine |
+| `MACRO_ACTION_BEGIN count` | Begin uploading up to 500 complete press/hold/release actions |
+| `MACRO_ACTION hold_ms wait_ms buttons dpad lx ly rx ry` | Store one complete action; firmware automatically releases to neutral for `wait_ms` |
+| `MACRO_ACTION_COMMIT` | Replace, activate, and persist the logical-action macro in NVS |
 | `MACRO_STEP ms buttons dpad lx ly rx ry` | Append one timed controller report to the pending upload |
 | `MACRO_COMMIT` | Insert, activate, and persist the uploaded steps in NVS |
 | `MACRO_CANCEL` | Discard a pending upload |
@@ -260,15 +263,18 @@ actions rather than the original farming sequence:
 1. Connect the board and select **新建宏录制**.
 2. Use the WebUI controller buttons, D-pad, keyboard, and virtual sticks in the
    exact order and timing that the new routine should replay.
-3. Select **完成并写入**. The page sends `MACRO_REPLACE_BEGIN`, each recorded
-   controller state, and `MACRO_COMMIT`, waiting for an ESP32 acknowledgement
-   after every command.
+3. Select **完成并写入**. The page pairs each active controller report with its
+   following release interval, then sends one `MACRO_ACTION` containing the
+   hold and wait duration for that complete action. It waits for an ESP32
+   acknowledgement after every command.
 4. After the commit succeeds, the recording appears as **自定义宏** in the board
    macro list and is stored in NVS. The next automatic boot runs that custom
    macro without requiring the computer.
 
-A newly recorded replacement macro may contain up to 160 state segments. The
-embedded original remains in firmware and can still be selected at any time.
+A newly recorded replacement macro may contain up to 500 complete actions.
+Pressing and releasing a button counts as one action; the firmware still emits
+the required neutral HID release internally. The embedded original remains in
+firmware and can still be selected at any time.
 
 ## Development
 

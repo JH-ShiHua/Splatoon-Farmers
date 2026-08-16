@@ -152,4 +152,52 @@ export function macroReplaceCommands(steps) {
   return commands;
 }
 
+function neutralReport(report) {
+  return (
+    report.buttons === 0 &&
+    report.dpad === 15 &&
+    report.leftX === 128 &&
+    report.leftY === 128 &&
+    report.rightX === 128 &&
+    report.rightY === 128
+  );
+}
+
+export function macroActionsFromSteps(steps) {
+  const actions = [];
+  for (let index = 0; index < steps.length; ++index) {
+    const step = steps[index];
+    if (neutralReport(step.report)) {
+      if (actions.length > 0) {
+        actions.at(-1).waitMs += step.durationMs;
+      }
+      continue;
+    }
+    const action = {
+      holdMs: step.durationMs,
+      waitMs: 0,
+      report: copyReport(step.report),
+    };
+    const next = steps[index + 1];
+    if (next && neutralReport(next.report)) {
+      action.waitMs = next.durationMs;
+      ++index;
+    }
+    actions.push(action);
+  }
+  return actions;
+}
+
+export function macroActionUploadCommands(actions) {
+  const commands = [`MACRO_ACTION_BEGIN ${actions.length}`];
+  for (const { holdMs, waitMs, report } of actions) {
+    commands.push(
+      `MACRO_ACTION ${holdMs} ${waitMs} ${report.buttons} ${report.dpad} ` +
+        `${report.leftX} ${report.leftY} ${report.rightX} ${report.rightY}`,
+    );
+  }
+  commands.push("MACRO_ACTION_COMMIT");
+  return commands;
+}
+
 export { NEUTRAL_REPORT };
