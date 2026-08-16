@@ -182,6 +182,13 @@ A radial `12%` deadzone is applied to both physical sticks. Browser and
 controller drivers may hide the Guide/Home button from web pages; that is a
 platform restriction rather than an ESP32 mapping failure.
 
+Physical gamepads can report tiny axis changes up to the browser refresh rate.
+To keep recorded macros within the 160-segment device limit, recording quantizes
+analog axes and stores pure stick movement at most once every `50 ms`. Digital
+button and D-pad changes are always captured immediately. This compression
+affects only recorded macro data; live controller reports remain responsive at
+the browser polling rate.
+
 | Controller | Keyboard | Controller | Keyboard |
 | --- | --- | --- | --- |
 | X / Y / B / A | I / J / K / L | D-pad | Arrow keys |

@@ -18,6 +18,38 @@ function copyReport(report) {
   };
 }
 
+function quantizeAxis(value, step = 8) {
+  const axis = Math.max(0, Math.min(255, Math.round(Number(value) || 0)));
+  if (axis === 128) {
+    return 128;
+  }
+  if (axis <= step / 2) {
+    return 0;
+  }
+  if (axis >= 255 - step / 2) {
+    return 255;
+  }
+  return Math.max(
+    0,
+    Math.min(255, 128 + Math.round((axis - 128) / step) * step),
+  );
+}
+
+function recordingReport(report) {
+  return {
+    buttons: report.buttons,
+    dpad: report.dpad,
+    leftX: quantizeAxis(report.leftX),
+    leftY: quantizeAxis(report.leftY),
+    rightX: quantizeAxis(report.rightX),
+    rightY: quantizeAxis(report.rightY),
+  };
+}
+
+function digitalStateChanged(left, right) {
+  return left.buttons !== right.buttons || left.dpad !== right.dpad;
+}
+
 function sameReport(left, right) {
   return (
     left.buttons === right.buttons &&
@@ -30,8 +62,9 @@ function sameReport(left, right) {
 }
 
 export class MacroRecorder {
-  constructor(clock = () => performance.now()) {
+  constructor(clock = () => performance.now(), analogSampleMs = 50) {
     this.clock = clock;
+    this.analogSampleMs = analogSampleMs;
     this.reset();
   }
 
@@ -51,11 +84,21 @@ export class MacroRecorder {
   }
 
   capture(report, now = this.clock()) {
-    if (!this.recording || sameReport(report, this.lastReport)) {
+    if (!this.recording) {
+      return;
+    }
+    const nextReport = recordingReport(report);
+    if (sameReport(nextReport, this.lastReport)) {
+      return;
+    }
+    if (
+      !digitalStateChanged(nextReport, this.lastReport) &&
+      now - this.lastChangedAt < this.analogSampleMs
+    ) {
       return;
     }
     this.appendElapsed(now);
-    this.lastReport = copyReport(report);
+    this.lastReport = nextReport;
     this.lastChangedAt = now;
   }
 

@@ -28,6 +28,37 @@ test("records neutral delay, held input, and release timing", () => {
   );
 });
 
+test("rate-limits and quantizes high-frequency analog gamepad reports", () => {
+  const recorder = new MacroRecorder(() => 0, 50);
+  recorder.start(0, 0);
+  for (let time = 10; time <= 2000; time += 10) {
+    recorder.capture(
+      {
+        ...NEUTRAL_REPORT,
+        leftX: 128 + Math.round((time / 2000) * 127),
+        leftY: 127 + (time % 20),
+      },
+      time,
+    );
+  }
+  const steps = recorder.finish(2050);
+  assert.ok(steps.length <= 42, `expected <= 42 steps, got ${steps.length}`);
+  assert.equal(steps.at(-1).report.leftX, 255);
+});
+
+test("records digital changes immediately between analog samples", () => {
+  const recorder = new MacroRecorder(() => 0, 50);
+  recorder.start(0, 0);
+  recorder.capture({ ...NEUTRAL_REPORT, leftX: 160 }, 20);
+  recorder.capture({ ...NEUTRAL_REPORT, leftX: 160, buttons: 4 }, 25);
+  recorder.capture({ ...NEUTRAL_REPORT, leftX: 160, buttons: 0 }, 30);
+  const steps = recorder.finish(40);
+  assert.deepEqual(
+    steps.map(({ report }) => report.buttons),
+    [0, 4, 0],
+  );
+});
+
 test("turns a new recording into the full-replacement protocol", () => {
   assert.deepEqual(
     macroReplaceCommands([
