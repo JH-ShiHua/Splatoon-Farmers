@@ -149,7 +149,7 @@
             <div class="recorder-heading">
               <div>
                 <span class="recorder-kicker">MACRO RECORDER</span>
-                <strong>从当前步骤后插入操作</strong>
+                <strong>插入现有宏，或从零录制新宏</strong>
               </div>
               <span data-testid="recording-status">等待录制</span>
             </div>
@@ -164,6 +164,14 @@
                 disabled
               >
                 开始录制
+              </button>
+              <button
+                class="button button-record"
+                type="button"
+                data-testid="new-macro-record-button"
+                disabled
+              >
+                新建宏录制
               </button>
               <button
                 class="button button-primary"
@@ -540,6 +548,6 @@
       </footer>
     </main>
 
-    <script type="module" src="./app.js?v=13"></script>
+    <script type="module" src="./app.js?v=14"></script>
   </body>
 </html>

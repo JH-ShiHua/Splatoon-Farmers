@@ -181,6 +181,7 @@ The control link is `115200 baud`, ASCII, one command per line.
 | `PING` | Return `PONG` |
 | `R buttons dpad lx ly rx ry` | Stop the routine and send one complete HID report |
 | `MACRO_BEGIN anchor count` | Begin uploading steps to insert after `anchor` existing steps |
+| `MACRO_REPLACE_BEGIN count` | Begin uploading a completely new custom macro that replaces the previous custom routine |
 | `MACRO_STEP ms buttons dpad lx ly rx ry` | Append one timed controller report to the pending upload |
 | `MACRO_COMMIT` | Insert, activate, and persist the uploaded steps in NVS |
 | `MACRO_CANCEL` | Discard a pending upload |
@@ -215,7 +216,28 @@ contains four steps, the saved order is:
 original 1-17 -> recorded 4 steps -> original 18-48
 ```
 
-The resulting macro is stored in ESP32 NVS and survives reset or power loss. Use **恢复原始宏** to delete it and return to the embedded routine. A macro may contain up to 160 total steps, with up to 96 steps added by one recording.
+The resulting macro is stored in ESP32 NVS and survives reset or power loss.
+Use **恢复原始宏** to delete it and return to the embedded routine. A macro may
+contain up to 160 total steps; insertion mode allows as many recorded segments
+as remain before that total limit.
+
+### Record a completely new macro from controller input
+
+Use this mode when the desired routine should contain only newly recorded
+actions rather than the original farming sequence:
+
+1. Connect the board and select **新建宏录制**.
+2. Use the WebUI controller buttons, D-pad, keyboard, and virtual sticks in the
+   exact order and timing that the new routine should replay.
+3. Select **完成并写入**. The page sends `MACRO_REPLACE_BEGIN`, each recorded
+   controller state, and `MACRO_COMMIT`, waiting for an ESP32 acknowledgement
+   after every command.
+4. After the commit succeeds, the recording appears as **自定义宏** in the board
+   macro list and is stored in NVS. The next automatic boot runs that custom
+   macro without requiring the computer.
+
+A newly recorded replacement macro may contain up to 160 state segments. The
+embedded original remains in firmware and can still be selected at any time.
 
 ## Development
 

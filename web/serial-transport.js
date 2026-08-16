@@ -212,8 +212,12 @@ export class MockSerialTransport {
       );
     } else if (/^MACRO_BEGIN \d+ \d+$/.test(command)) {
       const [, anchor, count] = command.split(" ").map(Number);
-      this.pendingMacro = { anchor, count, received: 0 };
+      this.pendingMacro = { anchor, count, received: 0, replace: false };
       this.emitMacro("begin", true);
+    } else if (/^MACRO_REPLACE_BEGIN \d+$/.test(command)) {
+      const [, count] = command.split(" ").map(Number);
+      this.pendingMacro = { anchor: 0, count, received: 0, replace: true };
+      this.emitMacro("replace_begin", true);
     } else if (/^MACRO_STEP \d+ \d+ \d+ \d+ \d+ \d+ \d+$/.test(command)) {
       if (!this.pendingMacro) {
         this.emitMacro("step", false, "invalid_step");
@@ -228,7 +232,9 @@ export class MockSerialTransport {
       ) {
         this.emitMacro("commit", false, "incomplete_upload");
       } else {
-        this.steps += this.pendingMacro.count;
+        this.steps = this.pendingMacro.replace
+          ? this.pendingMacro.count
+          : this.steps + this.pendingMacro.count;
         this.pendingMacro = null;
         this.custom = true;
         this.customAvailable = true;

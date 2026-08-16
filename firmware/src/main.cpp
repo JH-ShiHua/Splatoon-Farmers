@@ -24,9 +24,9 @@
 namespace {
 
 constexpr uint32_t kControlBaudRate = 115200;
-constexpr char kFirmwareVersion[] = "SplatoonFarmers/1.1.0";
+constexpr char kFirmwareVersion[] = "SplatoonFarmers/1.2.0";
 constexpr size_t kMaxMacroSteps = 160;
-constexpr size_t kMaxUploadedSteps = 96;
+constexpr size_t kMaxUploadedSteps = kMaxMacroSteps;
 constexpr uint32_t kMaxStepDurationMs = 600000;
 constexpr uint32_t kAutoStartDelayMs = 2000;
 
@@ -38,6 +38,7 @@ size_t UploadedStepCount = 0;
 size_t UploadExpectedCount = 0;
 size_t UploadAnchor = 0;
 bool UploadActive = false;
+bool UploadReplace = false;
 bool CustomMacroLoaded = false;
 bool SavedCustomAvailable = false;
 bool AutoStartPending = true;
@@ -291,7 +292,25 @@ void handleLine(char* line) {
     UploadExpectedCount = expected;
     UploadedStepCount = 0;
     UploadActive = true;
+    UploadReplace = false;
     emitMacroResult(true, "begin");
+    return;
+  }
+
+  if (sscanf(line, "MACRO_REPLACE_BEGIN %u", &expected) == 1) {
+    if (expected == 0 || expected > kMaxUploadedSteps) {
+      emitMacroResult(false, "replace_begin", "invalid_size");
+      return;
+    }
+    AutoStartPending = false;
+    Macro.stop();
+    flushMacroReport();
+    UploadAnchor = 0;
+    UploadExpectedCount = expected;
+    UploadedStepCount = 0;
+    UploadActive = true;
+    UploadReplace = true;
+    emitMacroResult(true, "replace_begin");
     return;
   }
 
@@ -326,14 +345,21 @@ void handleLine(char* line) {
       emitMacroResult(false, "commit", "incomplete_upload");
       return;
     }
-    const size_t suffixCount = ActiveMacroStepCount - UploadAnchor;
-    memmove(&ActiveMacro[UploadAnchor + UploadedStepCount],
-            &ActiveMacro[UploadAnchor],
-            suffixCount * sizeof(farmers::MacroStep));
-    memcpy(&ActiveMacro[UploadAnchor], UploadedSteps,
-           UploadedStepCount * sizeof(farmers::MacroStep));
-    ActiveMacroStepCount += UploadedStepCount;
+    if (UploadReplace) {
+      memcpy(ActiveMacro, UploadedSteps,
+             UploadedStepCount * sizeof(farmers::MacroStep));
+      ActiveMacroStepCount = UploadedStepCount;
+    } else {
+      const size_t suffixCount = ActiveMacroStepCount - UploadAnchor;
+      memmove(&ActiveMacro[UploadAnchor + UploadedStepCount],
+              &ActiveMacro[UploadAnchor],
+              suffixCount * sizeof(farmers::MacroStep));
+      memcpy(&ActiveMacro[UploadAnchor], UploadedSteps,
+             UploadedStepCount * sizeof(farmers::MacroStep));
+      ActiveMacroStepCount += UploadedStepCount;
+    }
     UploadActive = false;
+    UploadReplace = false;
     CustomMacroLoaded = true;
     SavedCustomAvailable = true;
     Macro.configure(ActiveMacro, ActiveMacroStepCount,
@@ -349,6 +375,7 @@ void handleLine(char* line) {
 
   if (strcmp(line, "MACRO_CANCEL") == 0) {
     UploadActive = false;
+    UploadReplace = false;
     UploadedStepCount = 0;
     UploadExpectedCount = 0;
     emitMacroResult(true, "cancel");
@@ -365,6 +392,7 @@ void handleLine(char* line) {
     Macro.configure(ActiveMacro, ActiveMacroStepCount,
                     farmers::kMaterialFarmLoopGapMs);
     UploadActive = false;
+    UploadReplace = false;
     emitMacroResult(true, "reset");
     emitState("status");
     return;

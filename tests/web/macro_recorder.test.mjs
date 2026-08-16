@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   MacroRecorder,
+  macroReplaceCommands,
   macroUploadCommands,
   NEUTRAL_REPORT,
 } from "../../web/macro-recorder.js";
@@ -23,6 +24,21 @@ test("records neutral delay, held input, and release timing", () => {
       [250, 0],
       [150, 4],
       [100, 0],
+    ],
+  );
+});
+
+test("turns a new recording into the full-replacement protocol", () => {
+  assert.deepEqual(
+    macroReplaceCommands([
+      { durationMs: 120, report: reportA },
+      { durationMs: 80, report: NEUTRAL_REPORT },
+    ]),
+    [
+      "MACRO_REPLACE_BEGIN 2",
+      "MACRO_STEP 120 4 15 128 128 128 128",
+      "MACRO_STEP 80 0 15 128 128 128 128",
+      "MACRO_COMMIT",
     ],
   );
 });

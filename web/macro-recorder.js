@@ -97,4 +97,16 @@ export function macroUploadCommands(anchorStep, steps) {
   return commands;
 }
 
+export function macroReplaceCommands(steps) {
+  const commands = [`MACRO_REPLACE_BEGIN ${steps.length}`];
+  for (const { durationMs, report } of steps) {
+    commands.push(
+      `MACRO_STEP ${durationMs} ${report.buttons} ${report.dpad} ` +
+        `${report.leftX} ${report.leftY} ${report.rightX} ${report.rightY}`,
+    );
+  }
+  commands.push("MACRO_COMMIT");
+  return commands;
+}
+
 export { NEUTRAL_REPORT };

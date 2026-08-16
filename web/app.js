@@ -4,7 +4,11 @@ import {
   KEYBOARD_BINDINGS,
   ManualInputState,
 } from "./manual-input.js";
-import { MacroRecorder, macroUploadCommands } from "./macro-recorder.js";
+import {
+  MacroRecorder,
+  macroReplaceCommands,
+  macroUploadCommands,
+} from "./macro-recorder.js";
 import { MockSerialTransport, SerialTransport } from "./serial-transport.js";
 import { stickVectorFromPoint, sticksCentered } from "./virtual-stick.js?v=5";
 
@@ -29,6 +33,9 @@ const elements = {
   ),
   manualStatus: document.querySelector('[data-testid="manual-status"]'),
   recordButton: document.querySelector('[data-testid="record-button"]'),
+  newMacroRecordButton: document.querySelector(
+    '[data-testid="new-macro-record-button"]',
+  ),
   uploadRecordingButton: document.querySelector(
     '[data-testid="upload-recording-button"]',
   ),
@@ -69,6 +76,7 @@ let customMacro = false;
 let activeMacroId = "original";
 let customMacroSteps = 0;
 let recordingAnchor = 0;
+let recordingMode = "insert";
 let lastSentAxes = null;
 let lastAppliedAxes = null;
 let pendingMacroResponse = null;
@@ -92,6 +100,8 @@ function render() {
   elements.startButton.disabled = busy || !connected || running || manualActive;
   elements.stopButton.disabled = busy || !connected || !running;
   elements.recordButton.disabled = busy || !connected || macroRecorder.recording;
+  elements.newMacroRecordButton.disabled =
+    busy || !connected || macroRecorder.recording;
   elements.uploadRecordingButton.disabled =
     busy || !connected || !macroRecorder.recording;
   elements.cancelRecordingButton.disabled =
@@ -170,8 +180,10 @@ function render() {
     elements.recordingStatus.textContent = "正在录制";
     elements.recordingStatus.dataset.state = "recording";
     elements.recordingDetail.textContent =
-      `插入点：第 ${recordingAnchor} 步之后 · ` +
-      `已捕获 ${macroRecorder.steps.length} 个状态片段；完成后写入开发板。`;
+      (recordingMode === "replace"
+        ? "新建宏：将替换当前自定义宏"
+        : `插入点：第 ${recordingAnchor} 步之后`) +
+      ` · 已捕获 ${macroRecorder.steps.length} 个状态片段；完成后写入开发板。`;
   } else {
     elements.recordingStatus.textContent = customMacro ? "自定义宏已保存" : "等待录制";
     elements.recordingStatus.dataset.state = customMacro ? "saved" : "idle";
@@ -456,11 +468,13 @@ elements.selectMacroButton.addEventListener("click", async () => {
   await transport.send("MACRO_LIST").catch(() => {});
 });
 
-elements.recordButton.addEventListener("click", async () => {
+async function beginRecording(mode) {
   if (!connected || !transport || busy) {
     return;
   }
-  recordingAnchor = Math.max(0, Math.min(currentStep, stepCount));
+  recordingMode = mode;
+  recordingAnchor =
+    mode === "replace" ? 0 : Math.max(0, Math.min(currentStep, stepCount));
   macroRecorder.start(recordingAnchor);
   activeManualControls = new Set();
   setError();
@@ -472,6 +486,13 @@ elements.recordButton.addEventListener("click", async () => {
     setError(error?.message || "无法开始宏录制");
     render();
   }
+}
+
+elements.recordButton.addEventListener("click", () => {
+  beginRecording("insert");
+});
+elements.newMacroRecordButton.addEventListener("click", () => {
+  beginRecording("replace");
 });
 
 elements.uploadRecordingButton.addEventListener("click", async () => {
@@ -496,9 +517,13 @@ elements.uploadRecordingButton.addEventListener("click", async () => {
     render();
     return;
   }
-  if (recordedSteps.length > 96) {
+  const maximumRecordingSteps =
+    recordingMode === "replace" ? 160 : Math.min(160 - stepCount, 160);
+  if (recordedSteps.length > maximumRecordingSteps) {
     macroRecorder.reset();
-    setError("录制产生了超过 96 个状态片段，请缩短操作后分次录制。");
+    setError(
+      `录制产生了 ${recordedSteps.length} 个状态片段，当前模式最多允许 ${maximumRecordingSteps} 个。`,
+    );
     render();
     return;
   }
@@ -507,9 +532,15 @@ elements.uploadRecordingButton.addEventListener("click", async () => {
   render();
   try {
     let confirmation = null;
-    for (const command of macroUploadCommands(recordingAnchor, recordedSteps)) {
-      const expectedAction = command.startsWith("MACRO_BEGIN")
-        ? "begin"
+    const uploadCommands =
+      recordingMode === "replace"
+        ? macroReplaceCommands(recordedSteps)
+        : macroUploadCommands(recordingAnchor, recordedSteps);
+    for (const command of uploadCommands) {
+      const expectedAction = command.startsWith("MACRO_REPLACE_BEGIN")
+        ? "replace_begin"
+        : command.startsWith("MACRO_BEGIN")
+          ? "begin"
         : command.startsWith("MACRO_STEP")
           ? "step"
           : "commit";
@@ -518,7 +549,9 @@ elements.uploadRecordingButton.addEventListener("click", async () => {
     customMacro = Boolean(confirmation.custom);
     stepCount = Number(confirmation.steps) || stepCount;
     elements.recordingDetail.textContent =
-      `已上传 ${recordedSteps.length} 个步骤，插入在第 ${recordingAnchor} 步之后。`;
+      recordingMode === "replace"
+        ? `已创建并写入 ${recordedSteps.length} 步新宏。`
+        : `已上传 ${recordedSteps.length} 个步骤，插入在第 ${recordingAnchor} 步之后。`;
     await transport.send("STATUS");
     await transport.send("MACRO_LIST");
   } catch (error) {
