@@ -29,6 +29,8 @@ Required gears described in this video: [Bilibili](https://www.bilibili.com/vide
   recording after the stopped step, and preserves the unexecuted macro suffix.
 - Stores a persistent custom macro in ESP32 NVS and switches between the
   embedded original macro and the saved custom macro from the WebUI.
+- Waits for Nintendo Switch USB HID enumeration after power-on, then starts the
+  active board-resident macro automatically without a computer or WebUI.
 
 The browser sends only high-level `START`, `STOP`, and status commands during
 automatic operation. Timing is owned by the microcontroller, so normal serial
@@ -80,6 +82,11 @@ Use a port such as `COM5` on Windows or `/dev/ttyUSB0` on Linux. After flashing:
 1. Connect native USB to the Nintendo Switch dock.
 2. Connect USB-UART to the computer.
 3. Start the local WebUI.
+
+The firmware can also run completely offline. When the native USB HID link is
+mounted by the Switch, the board waits two seconds and automatically starts the
+active macro from step 1. USB-UART and the WebUI are only needed for monitoring,
+manual control, editing, or stopping the routine.
 
 ```bash
 npm run serve

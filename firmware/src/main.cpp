@@ -24,10 +24,11 @@
 namespace {
 
 constexpr uint32_t kControlBaudRate = 115200;
-constexpr char kFirmwareVersion[] = "SplatoonFarmers/1.0.0";
+constexpr char kFirmwareVersion[] = "SplatoonFarmers/1.1.0";
 constexpr size_t kMaxMacroSteps = 160;
 constexpr size_t kMaxUploadedSteps = 96;
 constexpr uint32_t kMaxStepDurationMs = 600000;
+constexpr uint32_t kAutoStartDelayMs = 2000;
 
 NSGamepad Gamepad;
 farmers::MacroStep ActiveMacro[kMaxMacroSteps];
@@ -39,6 +40,8 @@ size_t UploadAnchor = 0;
 bool UploadActive = false;
 bool CustomMacroLoaded = false;
 bool SavedCustomAvailable = false;
+bool AutoStartPending = true;
+uint32_t UsbMountedAtMs = 0;
 Preferences MacroPreferences;
 farmers::MacroEngine Macro(ActiveMacro, 0, farmers::kMaterialFarmLoopGapMs,
                            true);
@@ -194,6 +197,27 @@ void flushMacroReport() {
   }
 }
 
+void serviceAutoStart(uint32_t nowMs) {
+  if (!AutoStartPending) {
+    return;
+  }
+  if (!USB) {
+    UsbMountedAtMs = 0;
+    return;
+  }
+  if (UsbMountedAtMs == 0) {
+    UsbMountedAtMs = nowMs == 0 ? 1 : nowMs;
+    return;
+  }
+  if (static_cast<uint32_t>(nowMs - UsbMountedAtMs) < kAutoStartDelayMs) {
+    return;
+  }
+  AutoStartPending = false;
+  Macro.start(nowMs);
+  flushMacroReport();
+  emitState("status");
+}
+
 void handleLine(char* line) {
   if (strcmp(line, "PING") == 0) {
     ATT_CONTROL_SERIAL.println("PONG");
@@ -212,6 +236,7 @@ void handleLine(char* line) {
     return;
   }
   if (strcmp(line, "MACRO_SELECT ORIGINAL") == 0) {
+    AutoStartPending = false;
     Macro.stop();
     flushMacroReport();
     loadEmbeddedMacro();
@@ -222,6 +247,7 @@ void handleLine(char* line) {
     return;
   }
   if (strcmp(line, "MACRO_SELECT CUSTOM") == 0) {
+    AutoStartPending = false;
     Macro.stop();
     flushMacroReport();
     if (!loadSavedMacro()) {
@@ -235,12 +261,14 @@ void handleLine(char* line) {
     return;
   }
   if (strcmp(line, "START") == 0) {
+    AutoStartPending = false;
     Macro.start(millis());
     flushMacroReport();
     emitState("status");
     return;
   }
   if (strcmp(line, "STOP") == 0) {
+    AutoStartPending = false;
     Macro.stop();
     flushMacroReport();
     emitState("status");
@@ -256,6 +284,7 @@ void handleLine(char* line) {
       emitMacroResult(false, "begin", "invalid_size_or_anchor");
       return;
     }
+    AutoStartPending = false;
     Macro.stop();
     flushMacroReport();
     UploadAnchor = anchor;
@@ -327,6 +356,7 @@ void handleLine(char* line) {
   }
 
   if (strcmp(line, "MACRO_RESET") == 0) {
+    AutoStartPending = false;
     Macro.stop();
     flushMacroReport();
     MacroPreferences.clear();
@@ -355,6 +385,7 @@ void handleLine(char* line) {
       (strcmp(command, "R") == 0 || strcmp(command, "REPORT") == 0)) {
     // Raw reports power manual input and leave a fallback path for future
     // computer-loaded routines. Entering this mode stops the embedded routine.
+    AutoStartPending = false;
     Macro.stop();
     Macro.consumeReportChanged();
     farmers::ControllerReport appliedReport{};
@@ -424,7 +455,9 @@ void setup() {
 
 void loop() {
   readControlSerial();
-  Macro.tick(millis());
+  const uint32_t nowMs = millis();
+  serviceAutoStart(nowMs);
+  Macro.tick(nowMs);
   flushMacroReport();
   Gamepad.loop();
 }
