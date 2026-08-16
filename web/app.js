@@ -11,7 +11,7 @@ import {
 import {
   MacroRecorder,
   macroActionUploadCommands,
-  macroActionsFromSteps,
+  macroTimelineFromSteps,
   macroUploadCommands,
 } from "./macro-recorder.js";
 import { MockSerialTransport, SerialTransport } from "./serial-transport.js";
@@ -54,6 +54,10 @@ const elements = {
   recordingDetail: document.querySelector('[data-testid="recording-detail"]'),
   stickDiagnostic: document.querySelector('[data-testid="stick-diagnostic"]'),
   gamepadStatus: document.querySelector('[data-testid="gamepad-status"]'),
+  liveInput: document.querySelector('[data-testid="live-input"]'),
+  liveHold: document.querySelector('[data-testid="live-hold"]'),
+  liveWait: document.querySelector('[data-testid="live-wait"]'),
+  liveTimeline: document.querySelector('[data-testid="live-timeline"]'),
 };
 const manualButtons = [
   ...document.querySelectorAll("button[data-control]"),
@@ -185,6 +189,7 @@ function render() {
     activeMacroId === "custom" ? "自定义宏" : "原始素材宏";
 
   if (macroRecorder.recording) {
+    const liveTimeline = macroTimelineFromSteps(macroRecorder.preview());
     elements.recordingStatus.textContent = "正在录制";
     elements.recordingStatus.dataset.state = "recording";
     elements.recordingDetail.textContent =
@@ -193,7 +198,7 @@ function render() {
         : `插入点：第 ${recordingAnchor} 步之后`) +
       ` · 已捕获 ${
         recordingMode === "replace"
-          ? macroActionsFromSteps(macroRecorder.steps).length
+          ? liveTimeline.actions.length
           : macroRecorder.steps.length
       } 个${recordingMode === "replace" ? "完整动作" : "状态片段"}；完成后写入开发板。`;
   } else {
@@ -203,6 +208,8 @@ function render() {
       ? `当前板载宏共 ${stepCount} 步，断电重启后仍会保留。`
       : "开始录制会停止当前循环；随后使用下方手动按键，网页会记录按下、松开与间隔。";
   }
+
+  renderInputMonitor();
 
   if (lastSentAxes || lastAppliedAxes) {
     const sent = lastSentAxes
@@ -216,6 +223,52 @@ function render() {
     elements.stickDiagnostic.textContent = "等待 ESP32 回显";
   }
 }
+
+function isNeutralReport(report) {
+  return report.buttons === 0 && report.dpad === 15 &&
+    report.leftX === 128 && report.leftY === 128 &&
+    report.rightX === 128 && report.rightY === 128;
+}
+
+function describeReport(report) {
+  const names = [];
+  const buttonNames = ["Y", "B", "A", "X", "L", "R", "ZL", "ZR", "-", "+", "L3", "R3", "HOME", "CAPTURE"];
+  buttonNames.forEach((name, bit) => {
+    if (report.buttons & (1 << bit)) names.push(name);
+  });
+  if (report.dpad !== 15) names.push(`D-PAD ${report.dpad}`);
+  if (report.leftX !== 128 || report.leftY !== 128) names.push(`L ${report.leftX},${report.leftY}`);
+  if (report.rightX !== 128 || report.rightY !== 128) names.push(`R ${report.rightX},${report.rightY}`);
+  return names.length ? names.join(" + ") : "等待 / 无输入";
+}
+
+function renderInputMonitor() {
+  if (!elements.liveInput) return;
+  const report = currentManualReport();
+  elements.liveInput.textContent = describeReport(report);
+  if (!macroRecorder.recording) {
+    elements.liveHold.textContent = "0 ms";
+    elements.liveWait.textContent = "0 ms";
+    elements.liveTimeline.innerHTML = '<li class="timeline-empty">开始录制后显示动作时间线</li>';
+    return;
+  }
+  const timeline = macroTimelineFromSteps(macroRecorder.preview());
+  const last = timeline.actions.at(-1);
+  const neutral = isNeutralReport(report);
+  elements.liveHold.textContent = `${last?.holdMs || 0} ms`;
+  elements.liveWait.textContent = `${neutral ? (last?.waitMs || timeline.initialWaitMs) : 0} ms`;
+  const rows = timeline.actions.slice(-6).map((action, index) =>
+    `<li><span>#${Math.max(1, timeline.actions.length - 5 + index)} ${describeReport(action.report)}</span><strong>${action.holdMs} ms / 等待 ${action.waitMs} ms</strong></li>`,
+  );
+  if (!timeline.actions.length) {
+    rows.push(`<li><span>首次输入前等待</span><strong>${timeline.initialWaitMs} ms</strong></li>`);
+  }
+  elements.liveTimeline.innerHTML = rows.join("");
+}
+
+setInterval(() => {
+  if (macroRecorder.recording) render();
+}, 100);
 
 function currentAxes() {
   return {
@@ -514,8 +567,9 @@ elements.uploadRecordingButton.addEventListener("click", async () => {
   resetAllSticks();
   manualInputState.clear();
   const recordedSteps = macroRecorder.finish();
+  const recordedTimeline = macroTimelineFromSteps(recordedSteps);
   const recordedActions =
-    recordingMode === "replace" ? macroActionsFromSteps(recordedSteps) : [];
+    recordingMode === "replace" ? recordedTimeline.actions : [];
   const hasInput = recordedSteps.some(
     ({ report }) =>
       report.buttons !== 0 ||
@@ -550,7 +604,7 @@ elements.uploadRecordingButton.addEventListener("click", async () => {
     let confirmation = null;
     const uploadCommands =
       recordingMode === "replace"
-        ? macroActionUploadCommands(recordedActions)
+        ? macroActionUploadCommands(recordedActions, recordedTimeline.initialWaitMs)
         : macroUploadCommands(recordingAnchor, recordedSteps);
     for (const command of uploadCommands) {
       const expectedAction = command.startsWith("MACRO_ACTION_BEGIN")

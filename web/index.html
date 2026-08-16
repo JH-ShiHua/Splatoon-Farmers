@@ -9,7 +9,7 @@
       content="Splatoon Raiders 单机素材刷取用 ESP32-S3 有线手柄控制台。"
     />
     <title>Splatoon Farmers · Material Raid Console</title>
-    <link rel="stylesheet" href="./styles.css?v=7" />
+    <link rel="stylesheet" href="./styles.css?v=8" />
   </head>
   <body>
     <div class="ambient-ink ambient-ink-teal" aria-hidden="true"></div>
@@ -50,6 +50,10 @@
             <span>∞ LOOP</span>
           </div>
         </div>
+
+      </section>
+
+      <section class="console-grid" aria-label="控制与录制工作区">
 
         <section class="control-card" aria-label="素材远征控制">
           <div class="card-tape" aria-hidden="true">RAID READY</div>
@@ -204,7 +208,6 @@
             桌面版 Chrome / Edge · 浏览器只负责发令，不参与脚本计时
           </p>
         </section>
-      </section>
 
       <section
         class="manual-panel"
@@ -519,6 +522,26 @@
         </div>
       </section>
 
+      <aside class="input-monitor" aria-labelledby="input-monitor-title">
+        <div class="monitor-stamp">INPUT FEED</div>
+        <p class="eyebrow">录制检查 / LIVE CAPTURE</p>
+        <h2 id="input-monitor-title">操作输入看板</h2>
+        <div class="monitor-current">
+          <span>当前输入</span>
+          <strong data-testid="live-input">等待 / 无输入</strong>
+        </div>
+        <div class="monitor-times">
+          <div><span>操作时间</span><strong data-testid="live-hold">0 ms</strong></div>
+          <div><span>等待时间</span><strong data-testid="live-wait">0 ms</strong></div>
+        </div>
+        <div class="timeline-head"><span>最近动作</span><small>操作 / 等待</small></div>
+        <ol class="input-timeline" data-testid="live-timeline">
+          <li class="timeline-empty">开始录制后显示动作时间线</li>
+        </ol>
+        <p class="monitor-note">时间每 0.1 秒刷新；写入时使用相同数据，包含第一次输入前的等待。</p>
+      </aside>
+      </section>
+
       <section class="wiring" aria-labelledby="wiring-title">
         <div class="wiring-copy">
           <p class="eyebrow">GEAR CHECK / 双链路</p>
@@ -549,6 +572,6 @@
       </footer>
     </main>
 
-    <script type="module" src="./app.js?v=17"></script>
+    <script type="module" src="./app.js?v=18"></script>
   </body>
 </html>

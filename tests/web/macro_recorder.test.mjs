@@ -5,6 +5,7 @@ import {
   MacroRecorder,
   macroActionUploadCommands,
   macroActionsFromSteps,
+  macroTimelineFromSteps,
   macroReplaceCommands,
   macroUploadCommands,
   NEUTRAL_REPORT,
@@ -86,10 +87,28 @@ test("pairs press and release timing into one logical action", () => {
     { holdMs: 120, waitMs: 500, report: reportA },
   ]);
   assert.deepEqual(macroActionUploadCommands(actions), [
-    "MACRO_ACTION_BEGIN 1",
+    "MACRO_ACTION_BEGIN 1 0",
     "MACRO_ACTION 120 500 4 15 128 128 128 128",
     "MACRO_ACTION_COMMIT",
   ]);
+});
+
+test("preserves the wait before the first input", () => {
+  const timeline = macroTimelineFromSteps([
+    { durationMs: 750, report: NEUTRAL_REPORT },
+    { durationMs: 120, report: reportA },
+    { durationMs: 500, report: NEUTRAL_REPORT },
+  ]);
+  assert.equal(timeline.initialWaitMs, 750);
+  assert.equal(timeline.actions.length, 1);
+  assert.deepEqual(
+    macroActionUploadCommands(timeline.actions, timeline.initialWaitMs),
+    [
+      "MACRO_ACTION_BEGIN 1 750",
+      "MACRO_ACTION 120 500 4 15 128 128 128 128",
+      "MACRO_ACTION_COMMIT",
+    ],
+  );
 });
 
 test("turns recorded steps into the firmware upload protocol", () => {

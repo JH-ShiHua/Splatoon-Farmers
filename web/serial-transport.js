@@ -218,14 +218,15 @@ export class MockSerialTransport {
       const [, count] = command.split(" ").map(Number);
       this.pendingMacro = { anchor: 0, count, received: 0, replace: true };
       this.emitMacro("replace_begin", true);
-    } else if (/^MACRO_ACTION_BEGIN \d+$/.test(command)) {
-      const [, count] = command.split(" ").map(Number);
+    } else if (/^MACRO_ACTION_BEGIN \d+(?: \d+)?$/.test(command)) {
+      const [, count, leadWait = 0] = command.split(" ").map(Number);
       this.pendingMacro = {
         anchor: 0,
         count,
         received: 0,
         replace: true,
         actions: true,
+        leadWait,
       };
       this.emitMacro("action_begin", true);
     } else if (/^MACRO_ACTION \d+ \d+ \d+ \d+ \d+ \d+ \d+ \d+$/.test(command)) {

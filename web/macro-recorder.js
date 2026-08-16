@@ -114,6 +114,24 @@ export class MacroRecorder {
     }));
   }
 
+  preview(now = this.clock()) {
+    const steps = this.steps.map((step) => ({
+      durationMs: step.durationMs,
+      report: copyReport(step.report),
+    }));
+    if (!this.recording) {
+      return steps;
+    }
+    const durationMs = Math.max(1, Math.round(now - this.lastChangedAt));
+    const previous = steps.at(-1);
+    if (previous && sameReport(previous.report, this.lastReport)) {
+      previous.durationMs += durationMs;
+    } else {
+      steps.push({ durationMs, report: copyReport(this.lastReport) });
+    }
+    return steps;
+  }
+
   appendElapsed(now) {
     const durationMs = Math.max(1, Math.round(now - this.lastChangedAt));
     const previous = this.steps.at(-1);
@@ -164,12 +182,19 @@ function neutralReport(report) {
 }
 
 export function macroActionsFromSteps(steps) {
+  return macroTimelineFromSteps(steps).actions;
+}
+
+export function macroTimelineFromSteps(steps) {
   const actions = [];
+  let initialWaitMs = 0;
   for (let index = 0; index < steps.length; ++index) {
     const step = steps[index];
     if (neutralReport(step.report)) {
       if (actions.length > 0) {
         actions.at(-1).waitMs += step.durationMs;
+      } else {
+        initialWaitMs += step.durationMs;
       }
       continue;
     }
@@ -185,11 +210,13 @@ export function macroActionsFromSteps(steps) {
     }
     actions.push(action);
   }
-  return actions;
+  return { initialWaitMs, actions };
 }
 
-export function macroActionUploadCommands(actions) {
-  const commands = [`MACRO_ACTION_BEGIN ${actions.length}`];
+export function macroActionUploadCommands(actions, initialWaitMs = 0) {
+  const commands = [
+    `MACRO_ACTION_BEGIN ${actions.length} ${Math.max(0, Math.round(initialWaitMs))}`,
+  ];
   for (const { holdMs, waitMs, report } of actions) {
     commands.push(
       `MACRO_ACTION ${holdMs} ${waitMs} ${report.buttons} ${report.dpad} ` +

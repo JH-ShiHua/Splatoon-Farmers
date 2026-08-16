@@ -24,9 +24,9 @@
 namespace {
 
 constexpr uint32_t kControlBaudRate = 115200;
-constexpr char kFirmwareVersion[] = "SplatoonFarmers/1.3.0";
+constexpr char kFirmwareVersion[] = "SplatoonFarmers/1.3.1";
 constexpr size_t kMaxLogicalActions = 500;
-constexpr size_t kMaxMacroSteps = kMaxLogicalActions * 2;
+constexpr size_t kMaxMacroSteps = kMaxLogicalActions * 2 + 1;
 constexpr size_t kMaxUploadedSteps = kMaxLogicalActions;
 constexpr uint32_t kMaxStepDurationMs = 600000;
 constexpr uint32_t kAutoStartDelayMs = 2000;
@@ -46,6 +46,7 @@ size_t ActiveMacroStepCount = 0;
 size_t ActiveLogicalStepCount = 0;
 size_t UploadedStepCount = 0;
 size_t UploadedActionCount = 0;
+uint32_t UploadedLeadWaitMs = 0;
 size_t UploadExpectedCount = 0;
 size_t UploadAnchor = 0;
 bool UploadActive = false;
@@ -101,6 +102,14 @@ bool loadSavedActions() {
     return false;
   }
   ActiveMacroStepCount = 0;
+  const uint32_t leadWaitMs = MacroPreferences.getULong("lead", 0);
+  if (leadWaitMs > kMaxStepDurationMs) {
+    return false;
+  }
+  if (leadWaitMs > 0) {
+    ActiveMacro[ActiveMacroStepCount] = {leadWaitMs, farmers::kNeutralReport};
+    ActiveVisibleStep[ActiveMacroStepCount++] = 0;
+  }
   for (size_t index = 0; index < actionCount; ++index) {
     const RecordedMacroAction& action = UploadedActions[index];
     if (action.holdMs == 0 || action.holdMs > kMaxStepDurationMs ||
@@ -159,6 +168,7 @@ bool saveActiveMacro() {
   if (saved) {
     MacroPreferences.remove("actions");
     MacroPreferences.remove("acount");
+    MacroPreferences.remove("lead");
   }
   return saved;
 }
@@ -167,7 +177,9 @@ bool saveRecordedActions(size_t actionCount) {
   const size_t bytes = actionCount * sizeof(RecordedMacroAction);
   if (MacroPreferences.putBytes("actions", UploadedActions, bytes) != bytes ||
       MacroPreferences.putUShort("acount", static_cast<uint16_t>(actionCount)) !=
-          sizeof(uint16_t)) {
+          sizeof(uint16_t) ||
+      MacroPreferences.putULong("lead", UploadedLeadWaitMs) !=
+          sizeof(uint32_t)) {
     return false;
   }
   MacroPreferences.remove("steps");
@@ -378,7 +390,10 @@ void handleLine(char* line) {
     return;
   }
 
-  if (sscanf(line, "MACRO_ACTION_BEGIN %u", &expected) == 1) {
+  unsigned long leadWait = 0;
+  const int actionBeginFields =
+      sscanf(line, "MACRO_ACTION_BEGIN %u %lu", &expected, &leadWait);
+  if (actionBeginFields >= 1) {
     if (expected == 0 || expected > kMaxLogicalActions) {
       emitMacroResult(false, "action_begin", "invalid_size");
       return;
@@ -387,6 +402,13 @@ void handleLine(char* line) {
     Macro.stop();
     flushMacroReport();
     UploadedActionCount = 0;
+    UploadedLeadWaitMs = actionBeginFields == 2
+                             ? static_cast<uint32_t>(leadWait)
+                             : 0;
+    if (UploadedLeadWaitMs > kMaxStepDurationMs) {
+      emitMacroResult(false, "action_begin", "invalid_lead_wait");
+      return;
+    }
     UploadExpectedCount = expected;
     UploadActive = false;
     ActionUploadActive = true;

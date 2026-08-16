@@ -213,7 +213,7 @@ The control link is `115200 baud`, ASCII, one command per line.
 | `R buttons dpad lx ly rx ry` | Stop the routine and send one complete HID report |
 | `MACRO_BEGIN anchor count` | Begin uploading steps to insert after `anchor` existing steps |
 | `MACRO_REPLACE_BEGIN count` | Begin uploading a completely new custom macro that replaces the previous custom routine |
-| `MACRO_ACTION_BEGIN count` | Begin uploading up to 500 complete press/hold/release actions |
+| `MACRO_ACTION_BEGIN count initial_wait_ms` | Begin uploading up to 500 complete actions and preserve the wait before the first input |
 | `MACRO_ACTION hold_ms wait_ms buttons dpad lx ly rx ry` | Store one complete action; firmware automatically releases to neutral for `wait_ms` |
 | `MACRO_ACTION_COMMIT` | Replace, activate, and persist the logical-action macro in NVS |
 | `MACRO_STEP ms buttons dpad lx ly rx ry` | Append one timed controller report to the pending upload |
